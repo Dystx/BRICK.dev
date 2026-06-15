@@ -1,5 +1,5 @@
 import { Command, InvalidArgumentError } from 'commander';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, realpathSync, writeFileSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import os from 'node:os';
@@ -129,8 +129,22 @@ function intersectFiles(discovered: string[], gitPaths: string[], cwd: string): 
   if (gitPaths.length === 0) return [];
   const root = getGitRoot(cwd);
   if (!root) return [];
-  const gitAbs = new Set(gitPaths.map((p) => resolve(root, p)));
-  return discovered.filter((file) => gitAbs.has(file));
+  const gitAbs = new Set(
+    gitPaths.map((p) => {
+      try {
+        return realpathSync(resolve(root, p));
+      } catch {
+        return resolve(root, p);
+      }
+    }),
+  );
+  return discovered.filter((file) => {
+    try {
+      return gitAbs.has(realpathSync(file));
+    } catch {
+      return gitAbs.has(file);
+    }
+  });
 }
 
 function serializeValue(value: unknown, indent = 0): string {
