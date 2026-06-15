@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { formatSarif } from '../../src/report/sarif.js';
-import type { ProjectReport } from '../../src/types.js';
+import type { Issue, ProjectReport } from '../../src/types.js';
 
 function makeReport(): ProjectReport {
   return {
@@ -108,18 +108,16 @@ describe('formatSarif', () => {
     expect(new Set(ids).size).toBe(2);
   });
 
-  it('includes rule metadata from issues', () => {
+  it('includes rule short descriptions from issues', () => {
     const output = formatSarif(makeReport());
     const parsed = JSON.parse(output);
     const rules = parsed.runs[0].tool.driver.rules;
 
     const magic = rules.find((r: { id: string }) => r.id === 'magic-spacing');
-    expect(magic.properties.category).toBe('layout');
-    expect(magic.properties.aiSpecific).toBe(false);
+    expect(magic.shortDescription.text).toBe('Avoid magic spacing values in layout');
 
     const zombie = rules.find((r: { id: string }) => r.id === 'zombie-state');
-    expect(zombie.properties.category).toBe('logic');
-    expect(zombie.properties.aiSpecific).toBe(true);
+    expect(zombie.shortDescription.text).toBe('Unused state setter detected');
   });
 
   it('formats with 2-space indentation', () => {
@@ -139,5 +137,42 @@ describe('formatSarif', () => {
 
     expect(parsed.runs[0].tool.driver.rules).toEqual([]);
     expect(parsed.runs[0].results).toEqual([]);
+  });
+
+  it('result.ruleIndex points to the matching rule in tool.driver.rules', () => {
+    const output = formatSarif(makeReport());
+    const parsed = JSON.parse(output);
+    const rules = parsed.runs[0].tool.driver.rules;
+    const results = parsed.runs[0].results;
+
+    for (const result of results) {
+      expect(rules[result.ruleIndex].id).toBe(result.ruleId);
+    }
+  });
+
+  it('does not emit a fixes field for issues with advice', () => {
+    const output = formatSarif(makeReport());
+    const parsed = JSON.parse(output);
+    const results = parsed.runs[0].results;
+
+    expect(results.every((r: { fixes?: unknown }) => r.fixes === undefined)).toBe(true);
+  });
+
+  it('falls back to "unknown" when filePath is missing', () => {
+    const issue: Issue = {
+      ruleId: 'no-filepath',
+      category: 'logic',
+      severity: 'low',
+      aiSpecific: false,
+      message: 'Issue without a file path',
+      line: 1,
+      column: 1,
+    };
+    const report = { ...makeReport(), issues: [issue] };
+    const output = formatSarif(report);
+    const parsed = JSON.parse(output);
+    const location = parsed.runs[0].results[0].locations[0].physicalLocation;
+
+    expect(location.artifactLocation.uri).toBe('unknown');
   });
 });

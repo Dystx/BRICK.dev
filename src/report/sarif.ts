@@ -1,24 +1,57 @@
 import { VERSION, type Issue, type ProjectReport, type Severity } from '../types.js';
 
-const severityToLevel: Record<Severity, string> = {
+interface SarifRule {
+  id: string;
+  shortDescription: { text: string };
+}
+
+interface SarifResult {
+  ruleId: string;
+  ruleIndex: number;
+  level: 'error' | 'warning' | 'note';
+  message: { text: string };
+  locations: Array<{
+    physicalLocation: {
+      artifactLocation: { uri: string };
+      region: { startLine: number; startColumn: number };
+    };
+  }>;
+}
+
+interface SarifLog {
+  version: '2.1.0';
+  $schema: string;
+  runs: Array<{
+    tool: {
+      driver: {
+        name: string;
+        version: string;
+        informationUri: string;
+        rules: SarifRule[];
+      };
+    };
+    results: SarifResult[];
+  }>;
+}
+
+const severityToLevel: Record<Severity, 'error' | 'warning' | 'note'> = {
   high: 'error',
   medium: 'warning',
   low: 'note',
 };
 
 export function formatSarif(report: ProjectReport): string {
-  const uniqueIssues = new Map<string, Issue>();
+  const ruleById = new Map<string, Issue>();
   for (const issue of report.issues) {
-    if (!uniqueIssues.has(issue.ruleId)) {
-      uniqueIssues.set(issue.ruleId, issue);
+    if (!ruleById.has(issue.ruleId)) {
+      ruleById.set(issue.ruleId, issue);
     }
   }
 
-  const rules = Array.from(uniqueIssues.values()).map((issue) => ({
+  const rules: SarifRule[] = Array.from(ruleById.values()).map((issue) => ({
     id: issue.ruleId,
-    properties: {
-      category: issue.category,
-      aiSpecific: issue.aiSpecific,
+    shortDescription: {
+      text: issue.message,
     },
   }));
 
@@ -27,19 +60,18 @@ export function formatSarif(report: ProjectReport): string {
     ruleIndexById.set(rules[i].id, i);
   }
 
-  const results = report.issues.map((issue) => ({
+  const results: SarifResult[] = report.issues.map((issue) => ({
     ruleId: issue.ruleId,
-    ruleIndex: ruleIndexById.get(issue.ruleId),
+    ruleIndex: ruleIndexById.get(issue.ruleId)!,
     level: severityToLevel[issue.severity],
     message: {
       text: issue.message,
     },
-    ...(issue.advice ? { fixes: [{ description: { text: issue.advice } }] } : {}),
     locations: [
       {
         physicalLocation: {
           artifactLocation: {
-            uri: issue.filePath ?? '',
+            uri: issue.filePath ?? 'unknown',
           },
           region: {
             startLine: issue.line,
@@ -50,7 +82,7 @@ export function formatSarif(report: ProjectReport): string {
     ],
   }));
 
-  const sarif = {
+  const sarif: SarifLog = {
     $schema: 'https://json.schemastore.org/sarif-2.1.0.json',
     version: '2.1.0',
     runs: [

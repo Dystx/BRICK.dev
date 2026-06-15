@@ -28,7 +28,7 @@ import {
 } from './engine/cache';
 import { formatPretty } from './report/pretty';
 import { formatJson } from './report/json';
-import { formatSarif } from './report/sarif';
+import { formatSarif } from './report/sarif.js';
 import { formatAdvice } from './report/advice';
 import {
   VERSION,
