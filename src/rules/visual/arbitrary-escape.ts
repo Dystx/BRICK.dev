@@ -1,7 +1,6 @@
-import type { Rule, Issue, RuleContext, ScanFacts } from '../../types';
-import { createRule } from '../rule';
-import { isLayoutArbitrary, matchesAllowlist, splitClassName } from '../utils';
-import { nearestSpacingToken } from '../../fix/layout-token.js';
+import type { Rule, Issue, RuleContext, ScanFacts } from '../../types.js';
+import { createRule } from '../rule.js';
+import { isLayoutArbitrary, matchesAllowlist, nearestSpacingToken, splitClassName } from '../utils.js';
 import { DEFAULT_SPACING_SCALE } from '../../config.js';
 
 export interface ArbitraryEscapeContext {

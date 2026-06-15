@@ -1,41 +1,26 @@
 import type { Issue } from '../types.js';
-import { DEFAULT_SPACING_SCALE } from '../config.js';
+import { nearestSpacingToken } from '../rules/utils.js';
 
-const LAYOUT_ARBITRARY_RE = /^(w|h|p|px|py|mx|my|gap|min-w|min-h|max-w|max-h|inset)-\[(.*)\]$/;
-
-export function nearestSpacingToken(className: string, scale: readonly number[]): string | undefined {
-  const match = LAYOUT_ARBITRARY_RE.exec(className);
-  if (!match) return undefined;
-  const prefix = match[1];
-  const rawValue = match[2].trim();
-
-  let px: number | undefined;
-  if (rawValue.endsWith('px')) {
-    px = parseFloat(rawValue.slice(0, -2));
-  } else if (rawValue.endsWith('rem')) {
-    px = parseFloat(rawValue.slice(0, -3)) * 16;
-  }
-  if (px === undefined || Number.isNaN(px)) return undefined;
-
-  let nearest: number | undefined;
-  let nearestDiff = Infinity;
-  for (const token of scale) {
-    const tokenPx = token * 4;
-    const diff = Math.abs(tokenPx - px);
-    if (diff < nearestDiff) {
-      nearestDiff = diff;
-      nearest = token;
-    }
-  }
-
-  if (nearest === undefined || nearestDiff > 1) return undefined;
-  return `${prefix}-${nearest}`;
-}
+export { nearestSpacingToken };
 
 function replaceClass(source: string, offender: string, replacement: string): string {
+  const attrRe = /\b(className|class)\s*=\s*("[^"]*"|'[^']*'|`[^`]*`)/g;
   const escaped = offender.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re = new RegExp(`(^|[\\s"'\`])${escaped}([\\s"'\`]|$)`, 'g');
-  return source.replace(re, (_match, before: string, after: string) => `${before}${replacement}${after}`);
+  const classRe = new RegExp(`(^|\\s)${escaped}(\\s|$)`, 'g');
+  let modified = false;
+
+  const result = source.replace(attrRe, (match, attrName: string, value: string) => {
+    const quote = value[0];
+    const inner = value.slice(1, -1);
+    const newInner = inner.replace(classRe, (_: string, before: string, after: string) => {
+      modified = true;
+      return `${before}${replacement}${after}`;
+    });
+    if (newInner === inner) return match;
+    return `${attrName}=${quote}${newInner}${quote}`;
+  });
+
+  return modified ? result : source;
 }
 
 export function applyLayoutTokenFix(source: string, issue: Issue): {

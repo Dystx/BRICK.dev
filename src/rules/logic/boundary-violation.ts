@@ -1,5 +1,5 @@
-import type { Rule, Issue, RuleContext, ScanFacts } from '../../types';
-import { createRule } from '../rule';
+import type { Rule, Issue, RuleContext, ScanFacts } from '../../types.js';
+import { createRule } from '../rule.js';
 
 const CLIENT_HOOKS = new Set(['useState', 'useEffect', 'useContext']);
 

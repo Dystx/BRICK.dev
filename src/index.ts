@@ -590,7 +590,7 @@ export async function runCli({ start }: { start: number }): Promise<void> {
       let scanElapsed = Math.round(performance.now() - scanStart);
 
       if (options.fix) {
-        const fixResults = applyFixes(scanResult.report.issues, scanResult.config);
+        const fixResults = applyFixes(scanResult.report.issues);
         const fixedFileCount = fixResults.filter((r) => r.applied.length > 0).length;
         const fixedIssueCount = fixResults.reduce((sum, r) => sum + r.applied.length, 0);
         if (!options.quiet) {
@@ -600,7 +600,6 @@ export async function runCli({ start }: { start: number }): Promise<void> {
         }
         const rescanStart = performance.now();
         scanResult = await runScan(options, paths);
-        scanElapsed = Math.round(performance.now() - scanStart);
         const rescanElapsed = Math.round(performance.now() - rescanStart);
         if (!options.quiet) {
           console.error(`(rescan took ${rescanElapsed}ms)`);

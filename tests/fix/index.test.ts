@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { applyFixes, applyLayoutTokenFix, applyUseClientFix } from '../../src/fix/index';
 import { applyFocusRingFix } from '../../src/fix/focus-ring';
-import { nearestSpacingToken } from '../../src/fix/layout-token';
+import { nearestSpacingToken } from '../../src/rules/utils';
 import { serializeConfig, DEFAULT_CONFIG } from '../../src/index';
 import type { Issue, ResolvedConfig } from '../../src/types';
 import {
@@ -65,12 +65,22 @@ export function Page() { return <div />; }
     expect(result.applied).toBe(false);
     expect(result.reason).toContain('already present');
   });
+
+  it('recognizes single-quoted use client directives', () => {
+    const source = `'use client';
+export function Page() { return <div />; }
+`;
+    const result = applyUseClientFix(source, makeIssue({ ruleId: 'logic/boundary-violation', line: 2, column: 1 }));
+    expect(result.applied).toBe(false);
+    expect(result.reason).toContain('already present');
+  });
 });
 
 describe('nearestSpacingToken', () => {
   it('maps exact px values to tokens', () => {
     expect(nearestSpacingToken('p-[16px]', [0, 1, 2, 4, 8])).toBe('p-4');
     expect(nearestSpacingToken('w-[32px]', [0, 1, 2, 4, 8])).toBe('w-8');
+    expect(nearestSpacingToken('m-[16px]', [0, 1, 2, 4, 8])).toBe('m-4');
   });
 
   it('maps near-px values within 1px tolerance', () => {
@@ -128,6 +138,24 @@ describe('applyLayoutTokenFix', () => {
     const result = applyLayoutTokenFix(source, makeIssue({ ruleId: 'visual/arbitrary-escape', line: 1, column: 1 }));
     expect(result.applied).toBe(false);
   });
+
+  it('does not replace classes outside className or class attributes', () => {
+    const source = 'const x = "p-[13px]";\n<div className="p-[13px]" />';
+    const issue = makeIssue({
+      ruleId: 'visual/arbitrary-escape',
+      line: 2,
+      column: 1,
+      fix: {
+        kind: 'replace',
+        description: 'Replace layout arbitrary value(s) with design-system tokens',
+        anchor: 'p-[13px]',
+        replacement: 'p-3',
+      },
+    });
+    const result = applyLayoutTokenFix(source, issue);
+    expect(result.applied).toBe(true);
+    expect(result.source).toBe('const x = "p-[13px]";\n<div className="p-3" />');
+  });
 });
 
 describe('applyFocusRingFix', () => {
@@ -182,6 +210,29 @@ describe('applyFocusRingFix', () => {
       cleanupTempDir(dir);
     }
   });
+
+  it('creates missing parent directories for the global CSS target', () => {
+    const dir = createTmpDir();
+    try {
+      const cssFile = join(dir, 'styles', 'global.css');
+      const issue = makeIssue({
+        ruleId: 'wcag/focus-appearance',
+        line: 1,
+        column: 1,
+        fix: {
+          kind: 'css-anchor',
+          description: 'Inject focus-ring CSS',
+          targetFile: cssFile,
+          anchor: '/* @slop-audit:v1.0.0:fix:focus-ring */',
+        },
+      });
+      const result = applyFocusRingFix(issue);
+      expect(result.applied).toBe(true);
+      expect(existsSync(cssFile)).toBe(true);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
 });
 
 describe('applyFixes orchestrator', () => {
@@ -202,7 +253,7 @@ describe('applyFixes orchestrator', () => {
           anchor: '"use client";',
         },
       });
-      const results = applyFixes([issue], makeConfig());
+      const results = applyFixes([issue]);
       expect(results).toHaveLength(1);
       expect(results[0].applied).toHaveLength(1);
       expect(results[0].skipped).toHaveLength(0);
@@ -231,7 +282,7 @@ describe('applyFixes orchestrator', () => {
           replacement: 'p-3',
         },
       });
-      const results = applyFixes([issue], makeConfig());
+      const results = applyFixes([issue]);
       expect(results[0].applied).toHaveLength(1);
       const content = readFileSync(filePath, 'utf-8');
       expect(content).toContain('className="p-3"');
@@ -256,11 +307,38 @@ describe('applyFixes orchestrator', () => {
           anchor: '/* @slop-audit:v1.0.0:fix:focus-ring */',
         },
       });
-      const results = applyFixes([issue], makeConfig());
+      const results = applyFixes([issue]);
       expect(results[0].applied).toHaveLength(1);
       expect(existsSync(cssFile)).toBe(true);
       const content = readFileSync(cssFile, 'utf-8');
       expect(content).toContain(':focus-visible');
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('returns a single skipped result when a source file cannot be read', () => {
+    const dir = createTmpDir();
+    try {
+      const filePath = join(dir, 'src');
+      mkdirSync(filePath, { recursive: true });
+      const issue = makeIssue({
+        ruleId: 'logic/boundary-violation',
+        line: 1,
+        column: 1,
+        filePath,
+        fix: {
+          kind: 'insert',
+          description: "Add 'use client' directive",
+          targetFile: filePath,
+          anchor: '"use client";',
+        },
+      });
+      const results = applyFixes([issue]);
+      expect(results).toHaveLength(1);
+      expect(results[0].applied).toHaveLength(0);
+      expect(results[0].skipped).toHaveLength(1);
+      expect(results[0].skipped[0].reason).toContain('Could not read source file');
     } finally {
       cleanupTempDir(dir);
     }

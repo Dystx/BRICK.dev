@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import type { Issue } from '../types.js';
 
 const ANCHOR = '/* @slop-audit:v1.0.0:fix:focus-ring */';
@@ -25,6 +26,7 @@ export function applyFocusRingFix(issue: Issue): {
   const newContent = existing.length > 0 && !existing.endsWith('\n')
     ? `${existing}\n\n${CSS_BLOCK}`
     : `${existing}${CSS_BLOCK}`;
+  mkdirSync(dirname(targetFile), { recursive: true });
   writeFileSync(targetFile, newContent);
   return { applied: true };
 }

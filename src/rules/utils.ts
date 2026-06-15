@@ -1,4 +1,4 @@
-const LAYOUT_ARBITRARY_RE = /^(?:w|h|p|m|gap|px|py|mx|my|min-w|min-h|max-w|max-h|inset)-\[.*\]$/;
+const LAYOUT_ARBITRARY_RE = /^(w|h|p|m|gap|px|py|mx|my|min-w|min-h|max-w|max-h|inset)-\[(.*)\]$/;
 const COLOR_ARBITRARY_RE = /^(?:bg|text|border|ring|shadow|from|to|via|stroke|fill)-\[.*\]$/;
 const SIZING_TOKEN_RE = /^(?:min-w|min-h|h|w|p|px|py|size|aspect)-.+$/;
 const FOCUS_RING_RE = /^(?:focus|focus-visible):ring-.+$/;
@@ -51,4 +51,33 @@ export function isFocusRingClass(className: string): boolean {
 
 export function isOutlineRemoval(className: string): boolean {
   return OUTLINE_REMOVAL_RE.test(className);
+}
+
+export function nearestSpacingToken(className: string, scale: readonly number[]): string | undefined {
+  const match = LAYOUT_ARBITRARY_RE.exec(className);
+  if (!match) return undefined;
+  const prefix = match[1];
+  const rawValue = match[2].trim();
+
+  let px: number | undefined;
+  if (rawValue.endsWith('px')) {
+    px = parseFloat(rawValue.slice(0, -2));
+  } else if (rawValue.endsWith('rem')) {
+    px = parseFloat(rawValue.slice(0, -3)) * 16;
+  }
+  if (px === undefined || Number.isNaN(px)) return undefined;
+
+  let nearest: number | undefined;
+  let nearestDiff = Infinity;
+  for (const token of scale) {
+    const tokenPx = token * 4;
+    const diff = Math.abs(tokenPx - px);
+    if (diff < nearestDiff) {
+      nearestDiff = diff;
+      nearest = token;
+    }
+  }
+
+  if (nearest === undefined || nearestDiff > 1) return undefined;
+  return `${prefix}-${nearest}`;
 }

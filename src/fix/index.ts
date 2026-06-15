@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
-import type { FixApplication, FixResult, Issue, ResolvedConfig } from '../types.js';
+import type { FixApplication, FixResult, Issue } from '../types.js';
 import { applyFocusRingFix } from './focus-ring.js';
 import { applyLayoutTokenFix } from './layout-token.js';
 import { applyUseClientFix } from './use-client.js';
@@ -18,7 +18,7 @@ function makeApplication(issue: Issue): FixApplication {
   };
 }
 
-export function applyFixes(issues: Issue[], _config: ResolvedConfig): FixResult[] {
+export function applyFixes(issues: Issue[]): FixResult[] {
   const byFile = new Map<string, Issue[]>();
   for (const issue of issues) {
     if (!issue.fix) continue;
@@ -41,48 +41,45 @@ export function applyFixes(issues: Issue[], _config: ResolvedConfig): FixResult[
 
     if (sourceIssues.length > 0) {
       let source: string;
+      let sourceReadFailed = false;
       try {
         source = readFileSync(filePath, 'utf-8');
       } catch {
+        sourceReadFailed = true;
         for (const issue of sourceIssues) {
-          const app = makeApplication(issue);
-          results.push({
-            filePath,
-            applied: [],
-            skipped: [{ ...app, reason: 'Could not read source file' }],
-          });
+          skipped.push({ ...makeApplication(issue), reason: 'Could not read source file' });
         }
-        // Still process CSS issues for this file if any.
-        if (cssIssues.length === 0) continue;
         source = '';
       }
 
-      let modified = source;
-      for (const issue of sourceIssues) {
-        const app = makeApplication(issue);
-        if (issue.fix?.kind === 'insert') {
-          const result = applyUseClientFix(modified, issue);
-          if (result.applied) {
-            modified = result.source;
-            applied.push(app);
+      if (!sourceReadFailed) {
+        let modified = source;
+        for (const issue of sourceIssues) {
+          const app = makeApplication(issue);
+          if (issue.fix?.kind === 'insert') {
+            const result = applyUseClientFix(modified, issue);
+            if (result.applied) {
+              modified = result.source;
+              applied.push(app);
+            } else {
+              skipped.push({ ...app, reason: result.reason ?? 'Could not apply use-client fix' });
+            }
+          } else if (issue.fix?.kind === 'replace') {
+            const result = applyLayoutTokenFix(modified, issue);
+            if (result.applied) {
+              modified = result.source;
+              applied.push(app);
+            } else {
+              skipped.push({ ...app, reason: result.reason ?? 'Could not apply layout-token fix' });
+            }
           } else {
-            skipped.push({ ...app, reason: result.reason ?? 'Could not apply use-client fix' });
+            skipped.push({ ...app, reason: 'Unsupported fix kind' });
           }
-        } else if (issue.fix?.kind === 'replace') {
-          const result = applyLayoutTokenFix(modified, issue);
-          if (result.applied) {
-            modified = result.source;
-            applied.push(app);
-          } else {
-            skipped.push({ ...app, reason: result.reason ?? 'Could not apply layout-token fix' });
-          }
-        } else {
-          skipped.push({ ...app, reason: 'Unsupported fix kind' });
         }
-      }
 
-      if (modified !== source) {
-        writeFileSync(filePath, modified);
+        if (modified !== source) {
+          writeFileSync(filePath, modified);
+        }
       }
     }
 
