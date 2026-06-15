@@ -28,6 +28,7 @@ import {
 } from './engine/cache';
 import { formatPretty } from './report/pretty';
 import { formatJson } from './report/json';
+import { formatSarif } from './report/sarif';
 import { formatAdvice } from './report/advice';
 import {
   VERSION,
@@ -66,7 +67,7 @@ interface ScanRunOptions extends Omit<ScanProjectOptions, 'cwd'> {
 }
 
 interface CliGlobalOptions extends ScanRunOptions {
-  format?: 'pretty' | 'json';
+  format?: 'pretty' | 'json' | 'sarif';
   json?: true | string;
   suggest?: boolean;
 }
@@ -402,6 +403,11 @@ function renderOutput(report: ProjectReport, options: CliGlobalOptions): void {
     return;
   }
 
+  if (options.format === 'sarif') {
+    console.log(formatSarif(report));
+    return;
+  }
+
   if (!options.quiet) {
     console.log(formatPretty(report));
   }
@@ -417,7 +423,7 @@ export async function runCli({ start }: { start: number }): Promise<void> {
       .option('--ai-only', 'only report AI-specific issues')
       .option('--human-only', 'only report human-facing issues')
       .option('--ignore-wcag22', 'ignore WCAG 2.2 related issues')
-      .option('--format <pretty|json>', 'output format', 'pretty')
+      .option('--format <pretty|json|sarif>', 'output format', 'pretty')
       .option('--threads <n>', 'number of worker threads', parseThreads)
       .option('--since <ref>', 'only scan files changed since git ref')
       .option('--workspace <path>', 'workspace/project path', process.cwd())
