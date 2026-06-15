@@ -99,4 +99,14 @@ describe('formatHeatmap', () => {
     expect(output).toContain((30.0 * 1.0 * 1.0).toFixed(1));
     expect(output).toContain((12.0 * 1.0 * 1.0).toFixed(1));
   });
+
+  it('handles a report with no components gracefully', () => {
+    const report = makeReport();
+    report.components = [];
+
+    const output = formatHeatmap(report, {});
+
+    expect(output).toContain('Migration ROI Heatmap');
+    expect(output).toContain('No components to rank');
+  });
 });
