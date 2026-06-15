@@ -1,0 +1,78 @@
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { getGitHead, getGitRoot, getStagedFiles } from '../src/git';
+
+const createTmpDir = () => realpathSync(mkdtempSync(join(tmpdir(), 'slop-audit-git-test-')));
+
+const git = (cwd: string, ...args: string[]): void => {
+  execFileSync('git', args, { cwd, encoding: 'utf-8' });
+};
+
+describe('git helpers', () => {
+  let repo: string;
+
+  beforeEach(() => {
+    repo = createTmpDir();
+    git(repo, 'init');
+    git(repo, 'config', 'user.email', 'test@example.com');
+    git(repo, 'config', 'user.name', 'Test User');
+  });
+
+  afterEach(() => {
+    rmSync(repo, { recursive: true, force: true });
+  });
+
+  describe('getGitRoot', () => {
+    it('returns the repo root inside a git repository', () => {
+      expect(getGitRoot(repo)).toBe(repo);
+    });
+
+    it('returns undefined outside a git repository', () => {
+      expect(getGitRoot(tmpdir())).toBeUndefined();
+    });
+
+    it('returns the root from a nested directory', () => {
+      const nested = join(repo, 'packages', 'app');
+      mkdirSync(nested, { recursive: true });
+      expect(getGitRoot(nested)).toBe(repo);
+    });
+  });
+
+  describe('getGitHead', () => {
+    it('returns undefined when there are no commits', async () => {
+      expect(await getGitHead(repo)).toBeUndefined();
+    });
+
+    it('returns the current commit hash', async () => {
+      writeFileSync(join(repo, 'file.txt'), 'hello');
+      git(repo, 'add', 'file.txt');
+      git(repo, 'commit', '-m', 'initial');
+      const head = await getGitHead(repo);
+      expect(head).toMatch(/^[a-f0-9]{40}$/);
+    });
+
+    it('returns undefined outside a git repository', async () => {
+      expect(await getGitHead(tmpdir())).toBeUndefined();
+    });
+  });
+
+  describe('getStagedFiles', () => {
+    it('returns an empty array when there are no staged files', async () => {
+      expect(await getStagedFiles(repo)).toEqual([]);
+    });
+
+    it('returns staged file paths', async () => {
+      mkdirSync(join(repo, 'src'), { recursive: true });
+      writeFileSync(join(repo, 'src', 'Button.tsx'), 'export const Button = () => {};');
+      git(repo, 'add', 'src/Button.tsx');
+      expect(await getStagedFiles(repo)).toEqual(['src/Button.tsx']);
+    });
+
+    it('returns an empty array outside a git repository', async () => {
+      expect(await getStagedFiles(tmpdir())).toEqual([]);
+    });
+  });
+});

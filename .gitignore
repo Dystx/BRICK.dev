@@ -1,0 +1,7 @@
+node_modules
+dist
+.slop-audit
+coverage
+*.log
+.DS_Store
+.worktrees

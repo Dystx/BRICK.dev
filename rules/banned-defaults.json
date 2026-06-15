@@ -1,0 +1,50 @@
+{
+  "version": "0.1.0",
+  "rules": [
+    {
+      "id": "no-glassmorphism",
+      "message": "Avoid backdrop-blur + translucent white backgrounds as a default card style.",
+      "category": "visual",
+      "severity": "medium",
+      "patterns": {
+        "classNames": ["backdrop-blur", "bg-white/\\d+", "bg-opacity-\\d+"]
+      }
+    },
+    {
+      "id": "no-gradient-hero",
+      "message": "Decorative gradient heroes are a common AI default.",
+      "category": "visual",
+      "severity": "low",
+      "patterns": {
+        "classNames": ["bg-gradient-to-", "from-indigo-", "from-purple-"]
+      }
+    },
+    {
+      "id": "max-radius",
+      "message": "Avoid oversized corner radii (>16px) on small components.",
+      "category": "visual",
+      "severity": "low",
+      "patterns": {
+        "classNames": ["rounded-2xl", "rounded-3xl", "rounded-full"]
+      }
+    },
+    {
+      "id": "no-generic-font-stack",
+      "message": "Inter/Roboto/Arial defaults signal unconsidered typography.",
+      "category": "typography",
+      "severity": "low",
+      "patterns": {
+        "fontFamily": ["Inter", "Roboto", "Arial", "sans-serif"]
+      }
+    },
+    {
+      "id": "no-saas-template-structure",
+      "message": "Centered hero + 3-column feature grid repeated across pages.",
+      "category": "architecture",
+      "severity": "medium",
+      "patterns": {
+        "pageStructure": ["centeredHero", "threeColumnFeatureGrid"]
+      }
+    }
+  ]
+}
