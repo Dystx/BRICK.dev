@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync, realpathSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { collectGitStats, getGitHead, getGitRoot, getStagedFiles } from '../src/git';
+import { collectGitStats, getFilesSince, getGitHead, getGitRoot, getStagedFiles } from '../src/git';
 
 const createTmpDir = () => realpathSync(mkdtempSync(join(tmpdir(), 'slop-audit-git-test-')));
 
@@ -73,6 +73,33 @@ describe('git helpers', () => {
 
     it('returns an empty array outside a git repository', async () => {
       expect(await getStagedFiles(tmpdir())).toEqual([]);
+    });
+  });
+
+  describe('getFilesSince', () => {
+    it('returns files changed since a valid ref', async () => {
+      mkdirSync(join(repo, 'src'), { recursive: true });
+      writeFileSync(join(repo, 'src', 'Button.tsx'), 'export const Button = () => {};');
+      git(repo, 'add', 'src/Button.tsx');
+      git(repo, 'commit', '-m', 'initial');
+
+      const head = (await getGitHead(repo)) ?? 'HEAD';
+
+      writeFileSync(join(repo, 'src', 'Card.tsx'), 'export const Card = () => {};');
+      git(repo, 'add', 'src/Card.tsx');
+      git(repo, 'commit', '-m', 'add card');
+
+      const files = await getFilesSince(repo, head);
+      expect(files).toEqual(['src/Card.tsx']);
+    });
+
+    it('returns an empty array for an invalid ref', async () => {
+      const files = await getFilesSince(repo, 'definitely-not-a-ref');
+      expect(files).toEqual([]);
+    });
+
+    it('returns an empty array outside a git repository', async () => {
+      expect(await getFilesSince(tmpdir(), 'HEAD')).toEqual([]);
     });
   });
 
