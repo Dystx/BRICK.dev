@@ -127,7 +127,9 @@ export function filterIssues(
 
 function intersectFiles(discovered: string[], gitPaths: string[], cwd: string): string[] {
   if (gitPaths.length === 0) return [];
-  const gitAbs = new Set(gitPaths.map((p) => resolve(cwd, p)));
+  const root = getGitRoot(cwd);
+  if (!root) return [];
+  const gitAbs = new Set(gitPaths.map((p) => resolve(root, p)));
   return discovered.filter((file) => gitAbs.has(file));
 }
 
@@ -299,6 +301,11 @@ async function runScan(
     files = explicitPaths.map((p) => resolve(cwd, p));
   } else {
     files = await discoverFiles(cwd, config);
+  }
+
+  if (options.staged && options.since) {
+    console.error('Error: --staged and --since cannot be used together');
+    process.exit(2);
   }
 
   if (options.staged) {
