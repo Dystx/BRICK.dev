@@ -6,18 +6,18 @@ import os from 'node:os';
 
 import { parseSync } from '@swc/core';
 
-import { loadConfig, DEFAULT_CONFIG, resolveConfigPath } from './config';
-import { discoverFiles } from './discover';
-import { getGitHead, getGitRoot, getStagedFiles, getFilesSince } from './git';
-import { installHook, uninstallHook } from './installer';
-import { WorkerPool } from './engine/pool';
+import { loadConfig, DEFAULT_CONFIG, resolveConfigPath } from './config.js';
+import { discoverFiles } from './discover.js';
+import { getGitHead, getGitRoot, getStagedFiles, getFilesSince } from './git.js';
+import { installHook, uninstallHook } from './installer.js';
+import { WorkerPool } from './engine/pool.js';
 import {
   scoreFile,
   aggregateReport,
   resolveFrameworkMultiplier,
   SEVERITY_WEIGHTS,
   stagedVirtualMeanThresholdExceeded,
-} from './engine/metrics';
+} from './engine/metrics.js';
 import {
   loadBaseline,
   saveBaseline,
@@ -25,7 +25,7 @@ import {
   validateBaseline,
   hashConfig,
   baselinePath,
-} from './engine/cache';
+} from './engine/cache.js';
 import { formatPretty } from './report/pretty.js';
 import { formatJson } from './report/json.js';
 import { formatSarif } from './report/sarif.js';
@@ -39,10 +39,10 @@ import {
   type BaselineMeta,
   type BaselineCache,
   type ComponentScore,
-} from './types';
+} from './types.js';
 
-export * from './types';
-export { loadConfig, DEFAULT_CONFIG } from './config';
+export * from './types.js';
+export { loadConfig, DEFAULT_CONFIG } from './config.js';
 
 export interface ScanProjectOptions {
   cwd: string;
