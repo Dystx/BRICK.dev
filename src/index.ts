@@ -26,10 +26,10 @@ import {
   hashConfig,
   baselinePath,
 } from './engine/cache';
-import { formatPretty } from './report/pretty';
-import { formatJson } from './report/json';
+import { formatPretty } from './report/pretty.js';
+import { formatJson } from './report/json.js';
 import { formatSarif } from './report/sarif.js';
-import { formatAdvice } from './report/advice';
+import { formatAdvice } from './report/advice.js';
 import {
   VERSION,
   type FileScanResult,

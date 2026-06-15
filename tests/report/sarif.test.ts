@@ -36,6 +36,16 @@ function makeReport(): ProjectReport {
         advice: 'Replace with a spacing token from the design system.',
       },
       {
+        ruleId: 'magic-spacing',
+        category: 'layout',
+        severity: 'medium',
+        aiSpecific: false,
+        filePath: 'src/components/Hero.tsx',
+        message: 'Avoid magic spacing values in layout',
+        line: 8,
+        column: 18,
+      },
+      {
         ruleId: 'zombie-state',
         category: 'logic',
         severity: 'high',
@@ -73,7 +83,7 @@ describe('formatSarif', () => {
     const output = formatSarif(makeReport());
     const parsed = JSON.parse(output);
 
-    expect(parsed.runs[0].results).toHaveLength(2);
+    expect(parsed.runs[0].results).toHaveLength(3);
   });
 
   it('maps severity to SARIF level', () => {
