@@ -59,3 +59,41 @@ export function getGitRoot(cwd: string): string | undefined {
     throw error;
   }
 }
+
+export interface GitFileStats {
+  recent: boolean;
+  editCount: number;
+}
+
+export async function collectGitStats(
+  cwd: string,
+  filePaths: string[],
+): Promise<Record<string, GitFileStats>> {
+  const stats: Record<string, GitFileStats> = {};
+  const now = Date.now();
+  const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+
+  for (const filePath of filePaths) {
+    const lastCommitOutput = await runGit(cwd, ['log', '-1', '--format=%ct', '--', filePath]);
+    let recent = false;
+    if (lastCommitOutput) {
+      const lastCommitMs = parseInt(lastCommitOutput, 10) * 1000;
+      recent = now - lastCommitMs <= thirtyDaysMs;
+    }
+
+    const recentCommitsOutput = await runGit(cwd, [
+      'log',
+      '--since=30 days ago',
+      '--format=%h',
+      '--',
+      filePath,
+    ]);
+    const editCount = recentCommitsOutput
+      ? recentCommitsOutput.split('\n').filter(Boolean).length
+      : 0;
+
+    stats[filePath] = { recent, editCount };
+  }
+
+  return stats;
+}

@@ -582,6 +582,15 @@ describe('scan-based commands', () => {
     expect(typeof report.slopIndex).toBe('number');
     expect(exitCode).toBe(1);
   });
+
+  it('outputs migration ROI heatmap with --heatmap', async () => {
+    const { exitCode, stdout } = await run(['--workspace', dir, '--heatmap']);
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain('Migration ROI Heatmap');
+    expect(stdout).toContain('ROI');
+    expect(stdout).toContain('Score');
+    expect(stdout).toContain('AiSlop.tsx');
+  });
 });
 
 describe('--doctor', () => {

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync, realpathSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { getGitHead, getGitRoot, getStagedFiles } from '../src/git';
+import { collectGitStats, getGitHead, getGitRoot, getStagedFiles } from '../src/git';
 
 const createTmpDir = () => realpathSync(mkdtempSync(join(tmpdir(), 'slop-audit-git-test-')));
 
@@ -73,6 +73,45 @@ describe('git helpers', () => {
 
     it('returns an empty array outside a git repository', async () => {
       expect(await getStagedFiles(tmpdir())).toEqual([]);
+    });
+  });
+
+  describe('collectGitStats', () => {
+    it('returns zero stats for files with no history', async () => {
+      mkdirSync(join(repo, 'src'), { recursive: true });
+      writeFileSync(join(repo, 'src', 'Button.tsx'), 'export const Button = () => {};');
+
+      const stats = await collectGitStats(repo, [join(repo, 'src', 'Button.tsx')]);
+
+      expect(stats[join(repo, 'src', 'Button.tsx')]).toEqual({
+        recent: false,
+        editCount: 0,
+      });
+    });
+
+    it('flags recently committed files and counts edits in the last 30 days', async () => {
+      mkdirSync(join(repo, 'src'), { recursive: true });
+      const filePath = join(repo, 'src', 'Button.tsx');
+      writeFileSync(filePath, 'export const Button = () => {};');
+      git(repo, 'add', 'src/Button.tsx');
+      git(repo, 'commit', '-m', 'initial');
+
+      const stats = await collectGitStats(repo, [filePath]);
+
+      expect(stats[filePath]).toEqual({
+        recent: true,
+        editCount: 1,
+      });
+    });
+
+    it('returns empty stats for files outside a git repository', async () => {
+      const filePath = join(tmpdir(), 'orphan.tsx');
+      const stats = await collectGitStats(tmpdir(), [filePath]);
+
+      expect(stats[filePath]).toEqual({
+        recent: false,
+        editCount: 0,
+      });
     });
   });
 });

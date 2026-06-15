@@ -8,7 +8,13 @@ import { parseSync } from '@swc/core';
 
 import { loadConfig, DEFAULT_CONFIG, resolveConfigPath } from './config.js';
 import { discoverFiles } from './discover.js';
-import { getGitHead, getGitRoot, getStagedFiles, getFilesSince } from './git.js';
+import {
+  collectGitStats,
+  getGitHead,
+  getGitRoot,
+  getStagedFiles,
+  getFilesSince,
+} from './git.js';
 import { installHook, uninstallHook } from './installer.js';
 import { WorkerPool } from './engine/pool.js';
 import {
@@ -30,6 +36,7 @@ import { formatPretty } from './report/pretty.js';
 import { formatJson } from './report/json.js';
 import { formatSarif } from './report/sarif.js';
 import { formatAdvice } from './report/advice.js';
+import { formatHeatmap } from './report/heatmap.js';
 import {
   VERSION,
   type FileScanResult,
@@ -70,6 +77,7 @@ interface CliGlobalOptions extends ScanRunOptions {
   format?: 'pretty' | 'json' | 'sarif';
   json?: true | string;
   suggest?: boolean;
+  heatmap?: boolean;
 }
 
 function parseThreads(value: string): number {
@@ -432,6 +440,7 @@ export async function runCli({ start }: { start: number }): Promise<void> {
       .option('--doctor', 'run diagnostics')
       .option('--watch', 'watch files and re-run (not implemented)')
       .option('--suggest', 'print remediation advice')
+      .option('--heatmap', 'output migration ROI heatmap')
       .option('--quiet', 'suppress non-error output')
       .option('--json [path]', 'write JSON report to path or stdout')
       .option('--staged', 'scan only staged files')
@@ -562,7 +571,18 @@ export async function runCli({ start }: { start: number }): Promise<void> {
       const { report, scores, config, baseline } = await runScan(options, paths);
       const scanElapsed = Math.round(performance.now() - scanStart);
       const totalElapsed = Math.round(performance.now() - start);
-      renderOutput(report, options);
+
+      if (options.heatmap) {
+        const stats = await collectGitStats(
+          cwd,
+          report.components.map((component) => component.filePath),
+        );
+        if (!options.quiet) {
+          console.log(formatHeatmap(report, stats));
+        }
+      } else {
+        renderOutput(report, options);
+      }
 
       let exitCode: 0 | 1;
       let stagedReason: 'individual' | 'mean' | 'p90' | undefined;
