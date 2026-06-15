@@ -17,6 +17,21 @@ export interface FixSuggestion {
   description: string;
   targetFile?: string;
   anchor?: string;
+  replacement?: string;
+}
+
+export interface FixApplication {
+  ruleId: string;
+  description: string;
+  line: number;
+  column: number;
+  reason?: string;
+}
+
+export interface FixResult {
+  filePath: string;
+  applied: FixApplication[];
+  skipped: FixApplication[];
 }
 
 export interface Issue {

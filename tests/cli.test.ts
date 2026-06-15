@@ -242,16 +242,5 @@ describe('unimplemented flag skeletons', () => {
     }
   });
 
-  it('--fix prints a warning and exits cleanly without scanning', async () => {
-    const dir = createTmpDir();
-    try {
-      const { exitCode, stdout, stderr } = await run(['--fix', '--workspace', dir]);
-      expect(exitCode).toBe(0);
-      expect(stderr).toMatch(/--fix is not implemented/i);
-      expect(stdout).toBe('');
-      expect(stderr).not.toMatch(/scan took/i);
-    } finally {
-      cleanupTempDir(dir);
-    }
-  });
+
 });

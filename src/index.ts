@@ -37,6 +37,7 @@ import { formatJson } from './report/json.js';
 import { formatSarif } from './report/sarif.js';
 import { formatAdvice } from './report/advice.js';
 import { formatHeatmap } from './report/heatmap.js';
+import { applyFixes } from './fix/index.js';
 import {
   VERSION,
   type FileScanResult,
@@ -457,7 +458,7 @@ export async function runCli({ start }: { start: number }): Promise<void> {
       .option('--since <ref>', 'only scan files changed since git ref')
       .option('--workspace <path>', 'workspace/project path', process.cwd())
       .option('--tighten', 'tighten baseline allowances')
-      .option('--fix', 'apply auto-fixes (not implemented)')
+      .option('--fix', 'apply auto-fixes')
       .option('--doctor', 'run diagnostics')
       .option('--watch', 'watch files and re-run (not implemented)')
       .option('--suggest', 'print remediation advice')
@@ -570,10 +571,6 @@ export async function runCli({ start }: { start: number }): Promise<void> {
       const options = command.optsWithGlobals() as CliGlobalOptions;
       const cwd = resolve(options.workspace ?? process.cwd());
 
-      if (options.fix) {
-        console.warn('Warning: --fix is not implemented');
-        process.exit(0);
-      }
       if (options.watch) {
         console.warn('Warning: --watch is not implemented');
         process.exit(0);
@@ -589,8 +586,28 @@ export async function runCli({ start }: { start: number }): Promise<void> {
       }
 
       const scanStart = performance.now();
-      const { report, scores, config, baseline } = await runScan(options, paths);
-      const scanElapsed = Math.round(performance.now() - scanStart);
+      let scanResult = await runScan(options, paths);
+      let scanElapsed = Math.round(performance.now() - scanStart);
+
+      if (options.fix) {
+        const fixResults = applyFixes(scanResult.report.issues, scanResult.config);
+        const fixedFileCount = fixResults.filter((r) => r.applied.length > 0).length;
+        const fixedIssueCount = fixResults.reduce((sum, r) => sum + r.applied.length, 0);
+        if (!options.quiet) {
+          console.error(
+            `Applied ${fixedIssueCount} fix(es) across ${fixedFileCount} file(s).`,
+          );
+        }
+        const rescanStart = performance.now();
+        scanResult = await runScan(options, paths);
+        scanElapsed = Math.round(performance.now() - scanStart);
+        const rescanElapsed = Math.round(performance.now() - rescanStart);
+        if (!options.quiet) {
+          console.error(`(rescan took ${rescanElapsed}ms)`);
+        }
+      }
+
+      const { report, scores, config, baseline } = scanResult;
       const totalElapsed = Math.round(performance.now() - start);
 
       if (options.heatmap) {

@@ -3,7 +3,7 @@ import { createRule } from '../rule';
 import { splitClassName, isFocusRingClass, isOutlineRemoval } from '../utils';
 
 export interface FocusAppearanceContext {
-  // No configuration needed.
+  globalCssTarget?: string;
 }
 
 export const focusAppearanceRule = createRule<FocusAppearanceContext>({
@@ -11,10 +11,10 @@ export const focusAppearanceRule = createRule<FocusAppearanceContext>({
   category: 'wcag',
   severity: 'high',
   aiSpecific: false,
-  create(_context: RuleContext): FocusAppearanceContext {
-    return {};
+  create(context: RuleContext): FocusAppearanceContext {
+    return { globalCssTarget: context.config.globalCssTarget };
   },
-  analyze(_context: FocusAppearanceContext, facts: ScanFacts): Issue[] {
+  analyze(context: FocusAppearanceContext, facts: ScanFacts): Issue[] {
     const issues: Issue[] = [];
 
     for (const element of facts.interactiveElements) {
@@ -34,6 +34,14 @@ export const focusAppearanceRule = createRule<FocusAppearanceContext>({
           column: element.column,
           advice:
             'Add a focus:ring-* or focus-visible:ring-* class, or remove outline-none.',
+          fix: context.globalCssTarget
+            ? {
+                kind: 'css-anchor',
+                description: `Inject focus-ring CSS into ${context.globalCssTarget}`,
+                targetFile: context.globalCssTarget,
+                anchor: '/* @slop-audit:v1.0.0:fix:focus-ring */',
+              }
+            : undefined,
         });
       }
     }
