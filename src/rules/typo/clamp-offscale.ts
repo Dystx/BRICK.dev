@@ -1,4 +1,4 @@
-import type { Issue, Rule, ScanFacts } from '../../types';
+import type { Issue, ResolvedConfig, Rule, RuleContext, ScanFacts } from '../../types';
 import { createRule } from '../rule';
 
 const DEFAULT_TYPOGRAPHY_SCALE_PX = [12, 14, 16, 18, 20, 24, 30, 36, 48, 60, 72];
@@ -15,6 +15,23 @@ interface ClampOffender {
   deviation: number;
 }
 
+function generateTypeScale(ratio: number, basePx = 16, steps = 11): number[] {
+  // Center the scale around basePx so a 1rem base font size is always present.
+  const startExponent = -3;
+  const scale: number[] = [];
+  for (let i = 0; i < steps; i++) {
+    scale.push(Math.round(basePx * ratio ** (startExponent + i)));
+  }
+  return scale;
+}
+
+function resolveTypeScale(config: ResolvedConfig): number[] {
+  if (config.typeScaleRatio && Number.isFinite(config.typeScaleRatio) && config.typeScaleRatio > 1) {
+    return generateTypeScale(config.typeScaleRatio);
+  }
+  return DEFAULT_TYPOGRAPHY_SCALE_PX;
+}
+
 function toPx(value: string): number | undefined {
   const match = /^([\d.]+)(px|rem)$/i.exec(value.trim());
   if (!match) return undefined;
@@ -24,10 +41,10 @@ function toPx(value: string): number | undefined {
   return unit === 'px' ? num : num * 16;
 }
 
-function nearestScaleDeviation(px: number): { nearest: number; deviation: number } {
-  let nearest = DEFAULT_TYPOGRAPHY_SCALE_PX[0];
+function nearestScaleDeviation(px: number, scale: number[]): { nearest: number; deviation: number } {
+  let nearest = scale[0];
   let minDiff = Math.abs(px - nearest);
-  for (const step of DEFAULT_TYPOGRAPHY_SCALE_PX) {
+  for (const step of scale) {
     const diff = Math.abs(px - step);
     if (diff < minDiff) {
       minDiff = diff;
@@ -37,7 +54,7 @@ function nearestScaleDeviation(px: number): { nearest: number; deviation: number
   return { nearest, deviation: minDiff / nearest };
 }
 
-function checkClampSegments(source: string): ClampOffender[] {
+function checkClampSegments(source: string, scale: number[]): ClampOffender[] {
   const offenders: ClampOffender[] = [];
   const clampMatches = source.matchAll(CLAMP_RE);
   for (const clampMatch of clampMatches) {
@@ -47,7 +64,7 @@ function checkClampSegments(source: string): ClampOffender[] {
       for (const match of numericMatches) {
         const px = toPx(`${match[1]}${match[2]}`);
         if (px === undefined) continue;
-        const { nearest, deviation } = nearestScaleDeviation(px);
+        const { nearest, deviation } = nearestScaleDeviation(px, scale);
         if (deviation > 0.2) {
           offenders.push({ segment: segment.trim(), value: px, nearest, deviation });
         }
@@ -66,20 +83,21 @@ function formatOffenders(offenders: ClampOffender[]): string {
     .join(', ');
 }
 
-export const clampOffscaleRule = createRule<unknown>({
+export const clampOffscaleRule = createRule<number[] | undefined>({
   id: 'typo/clamp-offscale',
   category: 'typo',
   severity: 'medium',
   aiSpecific: false,
-  create() {
-    return undefined;
+  create(context: RuleContext) {
+    return resolveTypeScale(context.config);
   },
-  analyze(_context: unknown, facts: ScanFacts): Issue[] {
+  analyze(context: number[] | undefined, facts: ScanFacts): Issue[] {
+    const scale = context ?? DEFAULT_TYPOGRAPHY_SCALE_PX;
     const issues: Issue[] = [];
 
     for (const styleProp of facts.styleProps) {
       if (!FONTSIZE_PROP_RE.test(styleProp.source)) continue;
-      const offenders = checkClampSegments(styleProp.source);
+      const offenders = checkClampSegments(styleProp.source, scale);
       if (offenders.length > 0) {
         issues.push({
           ruleId: 'typo/clamp-offscale',
@@ -97,7 +115,7 @@ export const clampOffscaleRule = createRule<unknown>({
     for (const classNameFact of facts.staticClassNames) {
       const clampMatches = classNameFact.value.matchAll(TAILWIND_TEXT_CLAMP_RE);
       for (const match of clampMatches) {
-        const offenders = checkClampSegments(match[1]);
+        const offenders = checkClampSegments(match[1], scale);
         if (offenders.length > 0) {
           issues.push({
             ruleId: 'typo/clamp-offscale',
@@ -117,4 +135,4 @@ export const clampOffscaleRule = createRule<unknown>({
   },
 });
 
-export default clampOffscaleRule satisfies Rule<unknown>;
+export default clampOffscaleRule satisfies Rule<number[] | undefined>;

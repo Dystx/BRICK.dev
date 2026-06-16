@@ -38,7 +38,8 @@ async function runRule(
     const { ast, nodeCount } = await parseFile(filePath);
     const facts = extractFacts(filePath, ast, nodeCount);
     const context: RuleContext = { config, filePath };
-    return clampOffscaleRule.analyze(undefined, facts);
+    const scale = clampOffscaleRule.create(context);
+    return clampOffscaleRule.analyze(scale, facts);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -108,5 +109,18 @@ export function Page() {
 `;
     const issues = await runRule(source, makeConfig());
     expect(issues).toHaveLength(0);
+  });
+
+  it('uses config.typeScaleRatio to build the typography scale', async () => {
+    // With a 1.5 ratio and 1rem base, the scale includes 16px, 24px, 36px, 54px...
+    // 2.75rem (44px) falls between 36px and 54px and deviates more than 20%.
+    const source = `
+export function Page() {
+  return <div style={{ fontSize: 'clamp(1rem, 2vw, 2.75rem)' }}>Content</div>;
+}
+`;
+    const issues = await runRule(source, makeConfig({ typeScaleRatio: 1.5 }));
+    expect(issues).toHaveLength(1);
+    expect(issues[0].message).toContain('2.75rem');
   });
 });
