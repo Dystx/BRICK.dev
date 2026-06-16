@@ -112,4 +112,14 @@ export function Box() {
     expect(issues[0].line).toBe(5);
     expect(issues[0].column).toBe(7);
   });
+
+  it('exempts calc() arbitrary values as legitimate responsive logic', async () => {
+    const source = `
+export function Box() {
+  return <div className="w-[calc(100%-2rem)] p-[calc(1rem+2px)]" />;
+}
+`;
+    const issues = await runRule(source, makeConfig());
+    expect(issues).toHaveLength(0);
+  });
 });

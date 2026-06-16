@@ -49,7 +49,6 @@ describe('splitClassName', () => {
 describe('isLayoutArbitrary', () => {
   it('returns true for layout arbitrary values', () => {
     expect(isLayoutArbitrary('w-[100px]')).toBe(true);
-    expect(isLayoutArbitrary('h-[calc(100%-1rem)]')).toBe(true);
     expect(isLayoutArbitrary('p-[1rem]')).toBe(true);
     expect(isLayoutArbitrary('m-[10px]')).toBe(true);
     expect(isLayoutArbitrary('gap-[2rem]')).toBe(true);
@@ -62,6 +61,12 @@ describe('isLayoutArbitrary', () => {
     expect(isLayoutArbitrary('max-w-[100px]')).toBe(true);
     expect(isLayoutArbitrary('max-h-[100px]')).toBe(true);
     expect(isLayoutArbitrary('inset-[0]')).toBe(true);
+  });
+
+  it('exempts calc() expressions as legitimate responsive logic', () => {
+    expect(isLayoutArbitrary('h-[calc(100%-1rem)]')).toBe(false);
+    expect(isLayoutArbitrary('w-[calc(100%-2rem)]')).toBe(false);
+    expect(isLayoutArbitrary('p-[calc(1rem+2px)]')).toBe(false);
   });
 
   it('returns true for empty bracket content', () => {

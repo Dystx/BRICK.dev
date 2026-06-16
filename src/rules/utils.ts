@@ -26,7 +26,12 @@ export function splitClassName(value: string): string[] {
 }
 
 export function isLayoutArbitrary(className: string): boolean {
-  return LAYOUT_ARBITRARY_RE.test(className);
+  const match = LAYOUT_ARBITRARY_RE.exec(className);
+  if (!match) return false;
+  const inner = match[2] ?? '';
+  // calc() expressions are legitimate responsive logic.
+  if (inner.includes('calc(')) return false;
+  return true;
 }
 
 export function isArbitraryColor(className: string): boolean {
