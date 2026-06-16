@@ -53,7 +53,7 @@ export class WorkerPool {
   }
 
   private runWorker(batch: string[], results: FileScanResult[], seen: Set<string>): Promise<void> {
-    return new Promise((res, rej) => {
+    return new Promise((res) => {
       let retries = 0;
       let settled = false;
       let currentWorker: Worker | undefined;
@@ -62,6 +62,21 @@ export class WorkerPool {
       const cleanup = (worker: Worker, timer: ReturnType<typeof setTimeout>) => {
         clearTimeout(timer);
         worker.terminate().catch(() => {});
+      };
+
+      const recordFailures = (reason: string): void => {
+        for (const filePath of batch) {
+          if (!seen.has(filePath)) {
+            seen.add(filePath);
+            results.push({
+              filePath,
+              componentCount: 0,
+              astNodeCount: 0,
+              issues: [],
+              parseError: `PARSE_ERROR: ${reason}`,
+            });
+          }
+        }
       };
 
       const spawn = () => {
@@ -79,7 +94,8 @@ export class WorkerPool {
             spawn();
           } else {
             settled = true;
-            rej(new Error(`Worker timed out after ${this.workerTimeoutMs}ms`));
+            recordFailures(`worker timed out after ${this.workerTimeoutMs}ms`);
+            res();
           }
         }, this.workerTimeoutMs);
 
@@ -101,7 +117,8 @@ export class WorkerPool {
             spawn();
           } else {
             settled = true;
-            rej(err);
+            recordFailures(lastError?.message ?? 'worker crashed');
+            res();
           }
         });
 
@@ -120,7 +137,8 @@ export class WorkerPool {
               spawn();
             } else {
               settled = true;
-              rej(err);
+              recordFailures(err.message);
+              res();
             }
           }
         });
