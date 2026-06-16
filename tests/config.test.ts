@@ -127,4 +127,35 @@ describe('loadConfig', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('loads an explicit config path', async () => {
+    const dir = createTmpDir();
+    try {
+      writeFileSync(
+        join(dir, 'custom.config.mjs'),
+        `export default { thresholds: { meanSlop: 42 } };`,
+      );
+      const config = await loadConfig(dir, 'custom.config.mjs');
+      expect(config.thresholds.meanSlop).toBe(42);
+      expect(config.include).toEqual(DEFAULT_CONFIG.include);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('loads an explicit config path outside cwd', async () => {
+    const dir = createTmpDir();
+    try {
+      const parent = createTmpDir();
+      writeFileSync(
+        join(parent, 'shared.config.mjs'),
+        `export default { thresholds: { meanSlop: 99 } };`,
+      );
+      const config = await loadConfig(dir, join(parent, 'shared.config.mjs'));
+      expect(config.thresholds.meanSlop).toBe(99);
+      rmSync(parent, { recursive: true, force: true });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

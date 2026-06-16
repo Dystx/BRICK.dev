@@ -158,8 +158,8 @@ function validateRuleIds(config: ResolvedConfig): void {
   }
 }
 
-export async function loadConfig(cwd: string): Promise<ResolvedConfig> {
-  const configPath = resolveConfigPath(cwd);
+export async function loadConfig(cwd: string, explicitPath?: string): Promise<ResolvedConfig> {
+  const configPath = explicitPath ? resolve(cwd, explicitPath) : resolveConfigPath(cwd);
   if (!configPath) {
     return DEFAULT_CONFIG;
   }

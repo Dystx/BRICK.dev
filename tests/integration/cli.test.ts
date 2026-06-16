@@ -74,6 +74,40 @@ describe('init command', () => {
     expect(stdout).toContain(`Created ${configPath}`);
   });
 
+  it('creates an explicit ESM config file with --config', async () => {
+    const { exitCode, stdout } = await run([
+      'init',
+      '--yes',
+      '--workspace',
+      dir,
+      '--config',
+      'my-config.mjs',
+    ]);
+    expect(exitCode).toBe(0);
+    const configPath = join(dir, 'my-config.mjs');
+    expect(existsSync(configPath)).toBe(true);
+    const content = readFileSync(configPath, 'utf8');
+    expect(content).toContain('export default');
+    expect(stdout).toContain(`Created ${configPath}`);
+  });
+
+  it('creates an explicit CJS config file with --config', async () => {
+    const { exitCode, stdout } = await run([
+      'init',
+      '--yes',
+      '--workspace',
+      dir,
+      '--config',
+      'my-config.cjs',
+    ]);
+    expect(exitCode).toBe(0);
+    const configPath = join(dir, 'my-config.cjs');
+    expect(existsSync(configPath)).toBe(true);
+    const content = readFileSync(configPath, 'utf8');
+    expect(content).toContain('module.exports');
+    expect(stdout).toContain(`Created ${configPath}`);
+  });
+
   it('appends .slop-audit/ to .gitignore on init', async () => {
     const gitignorePath = join(dir, '.gitignore');
     writeFileSync(gitignorePath, 'node_modules/\n');
@@ -617,6 +651,25 @@ describe('scan-based commands', () => {
     const report = JSON.parse(stdout) as ProjectReport;
     expect(typeof report.slopIndex).toBe('number');
     expect(exitCode).toBe(1);
+  });
+
+  it('uses an explicit config file with --config', async () => {
+    const customConfig = {
+      ...DEFAULT_CONFIG,
+      thresholds: { meanSlop: 100, p90Slop: 100, individualSlopThreshold: 100 },
+    };
+    writeFileSync(join(dir, 'custom.config.mjs'), serializeConfig(customConfig));
+
+    const { exitCode, stdout } = await run(['--workspace', dir, '--format', 'json', '--config', 'custom.config.mjs']);
+    const report = JSON.parse(stdout) as ProjectReport;
+    expect(exitCode).toBe(0);
+    expect(report.slopIndex).toBeLessThan(100);
+  });
+
+  it('exits with code 2 when --config points to a missing file', async () => {
+    const { exitCode, stderr } = await run(['--workspace', dir, '--config', 'missing.config.mjs']);
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain('Config file not found');
   });
 
   it('outputs migration ROI heatmap with --heatmap', async () => {

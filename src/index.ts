@@ -78,6 +78,7 @@ function escalateExitCode(current: 0 | 1 | 2, code: 1 | 2): 0 | 1 | 2 {
 
 export interface ScanProjectOptions {
   cwd: string;
+  config?: string;
   framework?: string;
   aiOnly?: boolean;
   humanOnly?: boolean;
@@ -216,8 +217,20 @@ function serializeValue(value: unknown, indent = 0): string {
   return JSON.stringify(value);
 }
 
-export function serializeConfig(config: ResolvedConfig): string {
+export function serializeConfig(config: ResolvedConfig, format: 'esm' | 'cjs' = 'esm'): string {
+  if (format === 'cjs') {
+    return `module.exports = ${serializeValue(config, 0)};\n`;
+  }
   return `export default ${serializeValue(config, 0)};\n`;
+}
+
+function resolveConfigOutputPath(cwd: string, explicitPath?: string): string {
+  if (explicitPath) return resolve(cwd, explicitPath);
+  return join(cwd, 'slop-audit.config.mjs');
+}
+
+function configOutputFormat(path: string): 'esm' | 'cjs' {
+  return path.endsWith('.cjs') ? 'cjs' : 'esm';
 }
 
 function diffConfig(existing: ResolvedConfig, proposed: ResolvedConfig): string[] {
@@ -534,8 +547,17 @@ async function runScan(
   explicitPaths?: string[],
 ): Promise<ScanRunResult> {
   const cwd = resolveScanCwd(options);
+
+  if (options.config) {
+    const explicitConfigPath = resolve(cwd, options.config);
+    if (!existsSync(explicitConfigPath)) {
+      console.error(`Config file not found: ${explicitConfigPath}`);
+      process.exit(2);
+    }
+  }
+
   const configStart = performance.now();
-  const loadedConfig = await loadConfig(cwd);
+  const loadedConfig = await loadConfig(cwd, options.config);
   const config: ResolvedConfig = options.framework
     ? { ...loadedConfig, framework: options.framework }
     : loadedConfig;
@@ -837,6 +859,7 @@ export async function runCli({ start }: { start: number }): Promise<void> {
       .option('--human-only', 'only report human-facing issues')
       .option('--ignore-wcag22', 'ignore WCAG 2.2 related issues')
       .option('--format <pretty|json|sarif>', 'output format', 'pretty')
+      .option('--config <path>', 'path to slop-audit config file')
       .option('--threads <n>', 'number of worker threads', parseThreads)
       .option('--since <ref>', 'only scan files changed since git ref')
       .option('--workspace <path>', 'workspace/project path (default: auto-detect monorepo root, fallback cwd)')
@@ -861,10 +884,11 @@ export async function runCli({ start }: { start: number }): Promise<void> {
       .action(async (cmdOptions: { baseline?: boolean; yes?: boolean }, command: Command) => {
         const options = command.optsWithGlobals() as CliGlobalOptions;
         const cwd = resolveScanCwd(options);
-        const configPath = join(cwd, 'slop-audit.config.mjs');
+        const configPath = resolveConfigOutputPath(cwd, options.config);
+        const outputFormat = configOutputFormat(configPath);
         const detectedConfig = buildDetectedConfig(cwd);
         if (existsSync(configPath) && !cmdOptions.yes) {
-          const existing = await loadConfig(cwd);
+          const existing = await loadConfig(cwd, options.config);
           console.error(`Config file already exists: ${configPath}`);
           console.error('Proposed changes:');
           for (const line of diffConfig(existing, detectedConfig)) {
@@ -886,7 +910,7 @@ export async function runCli({ start }: { start: number }): Promise<void> {
           }
         }
 
-        writeFileSync(configPath, serializeConfig(config));
+        writeFileSync(configPath, serializeConfig(config, outputFormat));
         if (!options.quiet) {
           console.log(`Created ${configPath}`);
         }
