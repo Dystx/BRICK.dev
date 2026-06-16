@@ -84,6 +84,7 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
   wcag: {
     targetSizeExemptSelectors: [],
   },
+  projectMemory: true,
 };
 
 function deepMerge<T extends object>(target: T, source: Partial<T>): T {

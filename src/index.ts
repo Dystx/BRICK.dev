@@ -50,6 +50,7 @@ import {
   hashConfig,
   baselinePath,
 } from './engine/cache.js';
+import { appendRun } from './engine/memory.js';
 import { formatPretty } from './report/pretty.js';
 import { formatJson } from './report/json.js';
 import { formatSarif } from './report/sarif.js';
@@ -630,6 +631,11 @@ async function runScan(
   // project mean separately, so it keeps a staged-only report for output.
   const mergeBaseline = !!(options.since || (explicitPaths && explicitPaths.length > 0));
   const { report, scores } = assembleProjectReport(results, config, options, baseline, cwd, mergeBaseline);
+
+  if (config.projectMemory !== false) {
+    appendRun(cwd, report, { thresholds: config.thresholds });
+  }
+
   return { report, scores, config, baseline, configElapsed, stagedPaths };
 }
 

@@ -175,6 +175,15 @@ export interface BaselineCache {
   scores: Record<string, { baselineScore: number; componentCount: number }>;
 }
 
+export interface SlopAuditRun {
+  timestamp: string;
+  version: string;
+  slopIndex: number;
+  categoryScores: Record<Category, number>;
+  topOffenseIds: string[];
+  thresholdExceeded: boolean;
+}
+
 export interface RuleContext {
   config: ResolvedConfig;
   filePath: string;
