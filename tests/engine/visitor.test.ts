@@ -272,4 +272,76 @@ export function Timer() {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('detects Vue <script setup> components and ref state', async () => {
+    const source = `<script setup>
+import { ref, onMounted } from 'vue';
+const count = ref(0);
+onMounted(() => console.log(count.value));
+</script>
+<template>
+  <div class="flex gap-4">{{ count }}</div>
+</template>
+`;
+    const dir = mkdtempSync(join(tmpdir(), 'slop-audit-visitor-test-'));
+    try {
+      const filePath = join(dir, 'Counter.vue');
+      writeFileSync(filePath, source);
+      const { ast, nodeCount, extraClassNames } = await parseFile(filePath);
+      const facts = extractFacts(filePath, ast, nodeCount, 0, extraClassNames);
+      expect(facts.components.length).toBe(1);
+      expect(facts.components[0].stateBindings).toHaveLength(1);
+      expect(facts.components[0].stateBindings[0].valueName).toBe('count');
+      expect(facts.components[0].stateBindings[0].valueReferenced).toBe(true);
+      expect(facts.components[0].hookCalls.some((h) => h.name === 'onMounted')).toBe(true);
+      expect(facts.staticClassNames.some((c) => c.value === 'flex gap-4')).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('detects Svelte 5 rune components', async () => {
+    const source = `<script>
+  let count = $state(0);
+  $effect(() => console.log(count));
+</script>
+<div class="flex">{count}</div>
+`;
+    const dir = mkdtempSync(join(tmpdir(), 'slop-audit-visitor-test-'));
+    try {
+      const filePath = join(dir, 'Counter.svelte');
+      writeFileSync(filePath, source);
+      const { ast, nodeCount, extraClassNames } = await parseFile(filePath);
+      const facts = extractFacts(filePath, ast, nodeCount, 0, extraClassNames);
+      expect(facts.components.length).toBe(1);
+      expect(facts.components[0].stateBindings).toHaveLength(1);
+      expect(facts.components[0].stateBindings[0].valueName).toBe('count');
+      expect(facts.components[0].stateBindings[0].valueReferenced).toBe(true);
+      expect(facts.components[0].hookCalls.some((h) => h.name === '$effect')).toBe(true);
+      expect(facts.staticClassNames.some((c) => c.value === 'flex')).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('detects Astro components as server components', async () => {
+    const source = `---
+const title = 'Home';
+---
+<div class="flex">{title}</div>
+<Button client:load>Click</Button>
+`;
+    const dir = mkdtempSync(join(tmpdir(), 'slop-audit-visitor-test-'));
+    try {
+      const filePath = join(dir, 'Home.astro');
+      writeFileSync(filePath, source);
+      const { ast, nodeCount } = await parseFile(filePath);
+      const facts = extractFacts(filePath, ast, nodeCount);
+      expect(facts.components.length).toBe(1);
+      expect(facts.components[0].isServerComponent).toBe(true);
+      expect(facts.staticClassNames.some((c) => c.value === 'flex')).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

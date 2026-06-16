@@ -319,6 +319,88 @@ function isUseStateDeclarator(node: Record<string, unknown>): boolean {
   );
 }
 
+const VUE_STATE_CALLS = new Set(['ref', 'reactive', 'computed', 'shallowRef', 'readonly']);
+const VUE_LIFECYCLE_HOOKS = new Set([
+  'onMounted',
+  'onUpdated',
+  'onUnmounted',
+  'onBeforeMount',
+  'onBeforeUpdate',
+  'onBeforeUnmount',
+  'onActivated',
+  'onDeactivated',
+  'onErrorCaptured',
+  'onRenderTracked',
+  'onRenderTriggered',
+]);
+const SVELTE_STATE_CALLS = new Set(['$state', '$derived', '$props']);
+const SVELTE_EFFECT_CALLS = new Set(['$effect', '$effect.pre', '$effect.root']);
+
+function isVueStateDeclarator(node: Record<string, unknown>): boolean {
+  const init = node.init as AnyNode;
+  if (!isObject(init) || init.type !== 'CallExpression') return false;
+  const callee = init.callee as AnyNode;
+  return (
+    isObject(callee) &&
+    callee.type === 'Identifier' &&
+    typeof callee.value === 'string' &&
+    VUE_STATE_CALLS.has(callee.value)
+  );
+}
+
+function isSvelteStateDeclarator(node: Record<string, unknown>): boolean {
+  const init = node.init as AnyNode;
+  if (!isObject(init) || init.type !== 'CallExpression') return false;
+  const callee = init.callee as AnyNode;
+  return (
+    isObject(callee) &&
+    callee.type === 'Identifier' &&
+    typeof callee.value === 'string' &&
+    SVELTE_STATE_CALLS.has(callee.value)
+  );
+}
+
+function extractFrameworkStateBinding(
+  node: Record<string, unknown>,
+  lineOffsets: number[],
+  offset = 0,
+): StateBinding | undefined {
+  const id = node.id as AnyNode;
+  let valueName: string | undefined;
+
+  if (isObject(id) && id.type === 'Identifier' && typeof id.value === 'string') {
+    valueName = id.value;
+  } else if (isObject(id) && id.type === 'ArrayPattern') {
+    const elements = id.elements as AnyNode[];
+    if (Array.isArray(elements) && elements.length > 0) {
+      const first = elements[0];
+      if (isObject(first) && first.type === 'Identifier' && typeof first.value === 'string') {
+        valueName = first.value;
+      }
+    }
+  }
+
+  if (valueName === undefined) return undefined;
+
+  const { line, column } = positionFrom(node, lineOffsets, offset);
+  return {
+    valueName,
+    setterName: undefined,
+    line,
+    column,
+    valueReferenced: false,
+    setterReferenced: false,
+  };
+}
+
+function detectFramework(filePath: string): 'vue' | 'svelte' | 'astro' | undefined {
+  const ext = filePath.split('.').pop()?.toLowerCase();
+  if (ext === 'vue') return 'vue';
+  if (ext === 'svelte') return 'svelte';
+  if (ext === 'astro') return 'astro';
+  return undefined;
+}
+
 function extractStateBinding(
   node: Record<string, unknown>,
   lineOffsets: number[],
@@ -445,6 +527,26 @@ export function extractFacts(
     stack: [],
     useClient: false,
   };
+
+  const framework = detectFramework(filePath);
+  const needsTopLevelComponent = framework === 'vue' || framework === 'svelte' || framework === 'astro';
+
+  if (needsTopLevelComponent) {
+    // Vue/Svelte/Astro files are components at the module level. Push a synthetic
+    // frame so rules that iterate components can see them even when the script
+    // block contains no JSX-returning function.
+    ctx.stack.push({
+      name: undefined,
+      line: 1,
+      column: 1,
+      isServerComponent: framework === 'astro',
+      hookCalls: [],
+      stateBindings: [],
+      headings: [],
+      isComponent: true,
+      bindings: new Set<string>(),
+    });
+  }
 
   function nearestComponent(): FunctionFrame | null {
     for (let i = ctx.stack.length - 1; i >= 0; i--) {
@@ -638,9 +740,19 @@ export function extractFacts(
     // Detect hook calls and attach to the nearest enclosing component frame.
     if (type === 'CallExpression') {
       const callee = node.callee as AnyNode;
-      if (isObject(callee) && callee.type === 'Identifier' && typeof callee.value === 'string' && isHookName(callee.value)) {
+      let hookName: string | undefined;
+      if (isObject(callee) && callee.type === 'Identifier' && typeof callee.value === 'string') {
+        if (isHookName(callee.value)) {
+          hookName = callee.value;
+        } else if (framework === 'vue' && VUE_LIFECYCLE_HOOKS.has(callee.value)) {
+          hookName = callee.value;
+        } else if (framework === 'svelte' && SVELTE_EFFECT_CALLS.has(callee.value)) {
+          hookName = callee.value;
+        }
+      }
+      if (hookName !== undefined) {
         const { line, column } = position(node);
-        attachHook({ name: callee.value as string, line, column });
+        attachHook({ name: hookName, line, column });
       }
     }
 
@@ -777,6 +889,22 @@ export function extractFacts(
             component.stateBindings.push(binding);
           }
         }
+      } else if (framework === 'vue' && isVueStateDeclarator(node)) {
+        const binding = extractFrameworkStateBinding(node, lineOffsets, offset);
+        if (binding) {
+          const component = nearestComponent();
+          if (component) {
+            component.stateBindings.push(binding);
+          }
+        }
+      } else if (framework === 'svelte' && isSvelteStateDeclarator(node)) {
+        const binding = extractFrameworkStateBinding(node, lineOffsets, offset);
+        if (binding) {
+          const component = nearestComponent();
+          if (component) {
+            component.stateBindings.push(binding);
+          }
+        }
       }
 
       // Skip walking the pattern itself; the identifiers there are bindings,
@@ -829,6 +957,10 @@ export function extractFacts(
   }
 
   visit(ast);
+
+  if (needsTopLevelComponent) {
+    popFrame();
+  }
 
   return facts;
 }
