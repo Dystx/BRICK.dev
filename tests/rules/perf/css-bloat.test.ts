@@ -65,7 +65,7 @@ describe('perf/css-bloat', () => {
     expect(issues).toHaveLength(1);
     expect(issues[0].ruleId).toBe('perf/css-bloat');
     expect(issues[0].severity).toBe('low');
-    expect(issues[0].message).toContain('6 times');
+    expect(issues[0].message).toContain('6 distinct files');
   });
 
   it('does not report a className repeated 5 times or fewer', async () => {
@@ -89,7 +89,7 @@ describe('perf/css-bloat', () => {
     ];
     const issues = await runAcrossFiles(files);
     expect(issues).toHaveLength(1);
-    expect(issues[0].message).toContain('6 times');
+    expect(issues[0].message).toContain('6 distinct files');
   });
 
   it('reports each distinct duplicated className once', async () => {
@@ -129,5 +129,26 @@ describe('perf/css-bloat', () => {
     }));
     const issues = await runAcrossFiles(files);
     expect(issues).toHaveLength(1);
+  });
+
+  it('does not count repeated uses within the same file as distinct files', async () => {
+    const className = 'flex items-center justify-between p-4 bg-white rounded';
+    const source = `
+export function Card() {
+  return (
+    <div className="${className}">
+      <span className="${className}">A</span>
+      <span className="${className}">B</span>
+      <span className="${className}">C</span>
+      <span className="${className}">D</span>
+      <span className="${className}">E</span>
+      <span className="${className}">F</span>
+    </div>
+  );
+}
+`;
+    const files = [{ name: 'Card.tsx', source }];
+    const issues = await runAcrossFiles(files);
+    expect(issues).toHaveLength(0);
   });
 });

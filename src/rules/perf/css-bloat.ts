@@ -3,7 +3,7 @@ import type { RuleRegistry } from '../registry';
 import { createRule } from '../rule';
 
 export interface CssBloatContext {
-  counts: Map<string, number>;
+  seenFiles: Map<string, Set<string>>;
   reported: Set<string>;
 }
 
@@ -13,12 +13,12 @@ function getAccumulator(registry: RuleRegistry | undefined): CssBloatContext {
   if (registry) {
     const existing = (registry as unknown as Record<symbol, CssBloatContext>)[ACCUMULATOR_KEY];
     if (existing) return existing;
-    const created: CssBloatContext = { counts: new Map(), reported: new Set() };
+    const created: CssBloatContext = { seenFiles: new Map(), reported: new Set() };
     (registry as unknown as Record<symbol, CssBloatContext>)[ACCUMULATOR_KEY] = created;
     return created;
   }
   // Fallback for direct rule usage without a registry (e.g. unit tests).
-  return { counts: new Map(), reported: new Set() };
+  return { seenFiles: new Map(), reported: new Set() };
 }
 
 function normalize(value: string): string {
@@ -39,11 +39,15 @@ export const cssBloatRule = createRule<CssBloatContext>({
       const normalized = normalize(classFact.value);
       if (normalized.length === 0) continue;
 
-      const previous = context.counts.get(normalized) ?? 0;
-      const next = previous + 1;
-      context.counts.set(normalized, next);
+      const files = context.seenFiles.get(normalized);
+      if (files) {
+        files.add(facts.filePath);
+      } else {
+        context.seenFiles.set(normalized, new Set([facts.filePath]));
+      }
 
-      if (next > 5 && !context.reported.has(normalized)) {
+      const distinctFileCount = context.seenFiles.get(normalized)!.size;
+      if (distinctFileCount > 5 && !context.reported.has(normalized)) {
         context.reported.add(normalized);
         const preview = normalized.length > 80 ? `${normalized.slice(0, 80)}...` : normalized;
         issues.push({
@@ -51,7 +55,7 @@ export const cssBloatRule = createRule<CssBloatContext>({
           category: 'perf',
           severity: 'low',
           aiSpecific: false,
-          message: `Identical className string repeated ${next} times across files: "${preview}"`,
+          message: `Identical className string repeated in ${distinctFileCount} distinct files: "${preview}"`,
           line: classFact.line,
           column: classFact.column,
           advice:
