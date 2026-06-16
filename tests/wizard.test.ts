@@ -20,7 +20,7 @@ describe('detectProjectFacts', () => {
     expect(facts.framework).toBe('react');
     expect(facts.styling).toBe('plain-css');
     expect(facts.uiLibrary).toBe('none');
-    expect(facts.include).toEqual(['**/*.{ts,tsx,js,jsx}']);
+    expect(facts.include).toEqual(['**/*.{ts,tsx,js,jsx,vue,svelte,astro}']);
   });
 
   it('detects tailwind from package.json', () => {
@@ -49,8 +49,8 @@ describe('detectProjectFacts', () => {
     mkdirSync(join(dir, 'app'), { recursive: true });
     mkdirSync(join(dir, 'src'), { recursive: true });
     const facts = detectProjectFacts(dir);
-    expect(facts.include).toContain('app/**/*.{ts,tsx,js,jsx}');
-    expect(facts.include).toContain('src/**/*.{ts,tsx,js,jsx}');
+    expect(facts.include).toContain('app/**/*.{ts,tsx,js,jsx,vue,svelte,astro}');
+    expect(facts.include).toContain('src/**/*.{ts,tsx,js,jsx,vue,svelte,astro}');
   });
 });
 
@@ -79,7 +79,7 @@ describe('runWizard', () => {
     expect(config.baseSpacing).toBe(8);
     expect(config.typeScaleRatio).toBe(1.25);
     expect(config.arbitraryTolerance).toBe('strict');
-    expect(config.include).toEqual(['src/**/*.{ts,tsx,js,jsx}']);
+    expect(config.include).toEqual(['src/**/*.{ts,tsx,js,jsx,vue,svelte,astro}']);
     expect(config.strictness).toBe('brutal');
   });
 });

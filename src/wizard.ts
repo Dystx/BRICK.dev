@@ -60,11 +60,12 @@ function hasFilesWithExt(cwd: string, ext: string): boolean {
 }
 
 function detectIncludePaths(cwd: string): string[] {
+  const pattern = '**/*.{ts,tsx,js,jsx,vue,svelte,astro}';
   const paths: string[] = [];
-  if (existsSync(join(cwd, 'app'))) paths.push('app/**/*.{ts,tsx,js,jsx}');
-  if (existsSync(join(cwd, 'src'))) paths.push('src/**/*.{ts,tsx,js,jsx}');
-  if (existsSync(join(cwd, 'components'))) paths.push('components/**/*.{ts,tsx,js,jsx}');
-  if (paths.length === 0) paths.push('**/*.{ts,tsx,js,jsx}');
+  if (existsSync(join(cwd, 'app'))) paths.push(`app/${pattern}`);
+  if (existsSync(join(cwd, 'src'))) paths.push(`src/${pattern}`);
+  if (existsSync(join(cwd, 'components'))) paths.push(`components/${pattern}`);
+  if (paths.length === 0) paths.push(pattern);
   return paths;
 }
 
@@ -217,7 +218,7 @@ export async function runWizard(cwd: string, options: WizardOptions = {}): Promi
       'balanced',
     );
 
-    const include = pathsChoice === 'auto' ? detected.include : pathsChoice === 'custom' ? ['**/*.{ts,tsx,js,jsx}'] : [`${pathsChoice}/**/*.{ts,tsx,js,jsx}`];
+    const include = pathsChoice === 'auto' ? detected.include : pathsChoice === 'custom' ? ['**/*.{ts,tsx,js,jsx,vue,svelte,astro}'] : [`${pathsChoice}/**/*.{ts,tsx,js,jsx,vue,svelte,astro}`];
 
     return {
       ...DEFAULT_CONFIG,

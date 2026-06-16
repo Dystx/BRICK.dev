@@ -3,7 +3,7 @@ import { minimatch } from 'minimatch';
 import { resolve, extname, relative, sep } from 'node:path';
 import type { ResolvedConfig } from './types';
 
-const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx']);
+const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.vue', '.svelte', '.astro']);
 
 export async function discoverFiles(cwd: string, config: ResolvedConfig): Promise<string[]> {
   const include = config.include.map((pattern) => resolve(cwd, pattern));

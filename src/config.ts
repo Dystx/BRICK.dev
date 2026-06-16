@@ -10,7 +10,7 @@ export const DEFAULT_SPACING_SCALE = [
 ];
 
 export const DEFAULT_CONFIG: ResolvedConfig = {
-  include: ['src/**/*.{ts,tsx,js,jsx}'],
+  include: ['src/**/*.{ts,tsx,js,jsx,vue,svelte,astro}'],
   exclude: ['**/node_modules/**', '**/.next/**', '**/dist/**'],
   rules: {
     'visual/arbitrary-escape': 'medium',

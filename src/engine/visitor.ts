@@ -85,10 +85,10 @@ function positionFromOffset(offset: number, lineOffsets: number[]): { line: numb
   return { line, column };
 }
 
-function positionFrom(node: AnyNode, lineOffsets: number[]): { line: number; column: number } {
+function positionFrom(node: AnyNode, lineOffsets: number[], offset = 0): { line: number; column: number } {
   const start = spanStart(node);
   if (start === undefined) return { line: 1, column: 1 };
-  return positionFromOffset(start, lineOffsets);
+  return positionFromOffset(start + offset, lineOffsets);
 }
 
 function containsJsx(node: AnyNode): boolean {
@@ -196,15 +196,18 @@ function spanEnd(node: AnyNode): number | undefined {
   return undefined;
 }
 
-function sourceText(node: AnyNode, source: string): string {
+function sourceText(node: AnyNode, source: string, offset = 0): string {
   const start = spanStart(node);
   const end = spanEnd(node);
   if (start === undefined || end === undefined) return 'expr';
-  return source.slice(Math.max(0, start - 1), Math.max(0, end - 1));
+  return source.slice(
+    Math.max(0, start + offset - 1),
+    Math.max(0, end + offset - 1),
+  );
 }
 
-function collectChainText(node: AnyNode, source: string): string {
-  return sourceText(node, source);
+function collectChainText(node: AnyNode, source: string, offset = 0): string {
+  return sourceText(node, source, offset);
 }
 
 function andChainOperands(node: AnyNode): AnyNode[] {
@@ -277,7 +280,11 @@ function isUseStateDeclarator(node: Record<string, unknown>): boolean {
   );
 }
 
-function extractStateBinding(node: Record<string, unknown>, lineOffsets: number[]): StateBinding | undefined {
+function extractStateBinding(
+  node: Record<string, unknown>,
+  lineOffsets: number[],
+  offset = 0,
+): StateBinding | undefined {
   const id = node.id as AnyNode;
   if (!isObject(id) || id.type !== 'ArrayPattern') return undefined;
   const elements = id.elements as AnyNode[];
@@ -302,7 +309,7 @@ function extractStateBinding(node: Record<string, unknown>, lineOffsets: number[
 
   if (valueName === undefined && setterName === undefined) return undefined;
 
-  const { line, column } = positionFrom(node, lineOffsets);
+  const { line, column } = positionFrom(node, lineOffsets, offset);
   return {
     valueName,
     setterName,
@@ -313,9 +320,13 @@ function extractStateBinding(node: Record<string, unknown>, lineOffsets: number[
   };
 }
 
-export function extractFacts(filePath: string, ast: Module, nodeCount: number): ScanFacts {
+export function extractFacts(filePath: string, ast: Module, nodeCount: number, offset = 0): ScanFacts {
   const source = readFileSync(filePath, 'utf-8');
   const lineOffsets = buildLineOffsets(source);
+
+  const position = (node: AnyNode): { line: number; column: number } =>
+    positionFrom(node, lineOffsets, offset);
+  const text = (node: AnyNode): string => sourceText(node, source, offset);
 
   const facts: ScanFacts = {
     filePath,
@@ -383,7 +394,7 @@ export function extractFacts(filePath: string, ast: Module, nodeCount: number): 
 
   function pushFrame(node: Record<string, unknown>): void {
     const name = getFunctionName(node);
-    const { line, column } = positionFrom(node, lineOffsets);
+    const { line, column } = position(node);
     const bindings = new Set<string>();
     if (name) {
       bindings.add(name);
@@ -521,7 +532,7 @@ export function extractFacts(filePath: string, ast: Module, nodeCount: number): 
     if (type === 'CallExpression') {
       const callee = node.callee as AnyNode;
       if (isObject(callee) && callee.type === 'Identifier' && typeof callee.value === 'string' && isHookName(callee.value)) {
-        const { line, column } = positionFrom(node, lineOffsets);
+        const { line, column } = position(node);
         attachHook({ name: callee.value as string, line, column });
       }
     }
@@ -534,7 +545,7 @@ export function extractFacts(filePath: string, ast: Module, nodeCount: number): 
         const valueNode = unwrapJsxExpression(raw);
         const classValue = staticClassValue(valueNode);
         if (classValue !== undefined) {
-          const { line, column } = positionFrom(node, lineOffsets);
+          const { line, column } = position(node);
           facts.staticClassNames.push({ value: classValue, line, column });
         }
       }
@@ -542,8 +553,8 @@ export function extractFacts(filePath: string, ast: Module, nodeCount: number): 
         const raw = node.value as AnyNode;
         const valueNode = unwrapJsxExpression(raw);
         if (isObject(valueNode) && valueNode.type === 'ObjectExpression') {
-          const { line, column } = positionFrom(node, lineOffsets);
-          facts.styleProps.push({ source: sourceText(valueNode, source), line, column });
+          const { line, column } = position(node);
+          facts.styleProps.push({ source: text(valueNode), line, column });
         }
       }
     }
@@ -564,15 +575,15 @@ export function extractFacts(filePath: string, ast: Module, nodeCount: number): 
           if (name === 'className' || name === 'class') {
             const classValue = staticClassValue(valueNode);
             if (classValue !== undefined) {
-              const { line: cl, column: cc } = positionFrom(attr, lineOffsets);
+              const { line: cl, column: cc } = position(attr);
               headingClassNames.push({ value: classValue, line: cl, column: cc });
             }
           }
           if (name === 'style' && isObject(valueNode) && valueNode.type === 'ObjectExpression') {
-            headingStyleSource = sourceText(valueNode, source);
+            headingStyleSource = text(valueNode);
           }
         }
-        const { line: hl, column: hc } = positionFrom(node, lineOffsets);
+        const { line: hl, column: hc } = position(node);
         const heading = {
           level: parseInt(tag[1], 10),
           classNames: headingClassNames,
@@ -605,7 +616,7 @@ export function extractFacts(filePath: string, ast: Module, nodeCount: number): 
         if (name === 'className' || name === 'class') {
           const classValue = staticClassValue(valueNode);
           if (classValue !== undefined) {
-            const { line, column } = positionFrom(attr, lineOffsets);
+            const { line, column } = position(attr);
             classNames.push({ value: classValue, line, column });
           }
         }
@@ -613,7 +624,7 @@ export function extractFacts(filePath: string, ast: Module, nodeCount: number): 
           hasOnClick = true;
         }
       }
-      const { line, column } = positionFrom(node, lineOffsets);
+      const { line, column } = position(node);
       const elementFact = { tag: tag as string, attributes, classNames, line, column };
       facts.jsxElements.push(elementFact);
       if (tag === 'button' || tag === 'a' || tag === 'input' || hasOnClick) {
@@ -625,12 +636,12 @@ export function extractFacts(filePath: string, ast: Module, nodeCount: number): 
     if (type === 'BinaryExpression' && node.operator === '&&' && !isAndChainChild(parent)) {
       const depth = defensiveMemberChainDepth(node);
       if (depth !== undefined && depth >= 3) {
-        const { line, column } = positionFrom(node, lineOffsets);
+        const { line, column } = position(node);
         facts.logicalExpressions.push({
           depth,
           line,
           column,
-          text: collectChainText(node, source),
+          text: collectChainText(node, source, offset),
         });
       }
     }
@@ -652,7 +663,7 @@ export function extractFacts(filePath: string, ast: Module, nodeCount: number): 
       }
 
       if (isUseStateDeclarator(node)) {
-        const binding = extractStateBinding(node, lineOffsets);
+        const binding = extractStateBinding(node, lineOffsets, offset);
         if (binding) {
           const component = nearestComponent();
           if (component) {

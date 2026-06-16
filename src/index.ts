@@ -1,5 +1,5 @@
 import { Command, InvalidArgumentError } from 'commander';
-import { appendFileSync, existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, realpathSync, statSync, watch, writeFileSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import os from 'node:os';
@@ -17,6 +17,10 @@ import {
   getFilesSince,
 } from './git.js';
 import { installHook, uninstallHook } from './installer.js';
+import {
+  checkRegistrySnapshotFreshness,
+  refreshRegistrySnapshot,
+} from './rules/component/registry.js';
 import { WorkerPool } from './engine/pool.js';
 import {
   scoreFile,
@@ -298,6 +302,25 @@ async function runDoctor(
   }
   lines.push('');
 
+  lines.push('Registry');
+  let registryDetail: string | undefined;
+  try {
+    const refresh = await refreshRegistrySnapshot(cwd);
+    if (refresh.success) {
+      registryDetail = 'Refreshed shadcn/ui registry snapshot from network.';
+    } else {
+      registryDetail = `Network refresh unavailable (${refresh.error ?? 'unknown error'}); using local or bundled snapshot.`;
+    }
+    const freshness = checkRegistrySnapshotFreshness(cwd);
+    if (!freshness.fresh) {
+      registryDetail = `${registryDetail} ${freshness.reason}`;
+    }
+    push(mark(true), 'shadcn/ui registry snapshot check complete', registryDetail);
+  } catch (err) {
+    push(mark(true), 'shadcn/ui registry snapshot check complete', `Warning: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  lines.push('');
+
   const summary = ok ? 'All diagnostic checks passed.' : 'One or more diagnostic checks failed.';
   push(mark(ok), summary);
 
@@ -444,6 +467,60 @@ export async function scanProject(options: ScanProjectOptions): Promise<ProjectR
   return report;
 }
 
+async function watchProject(
+  options: CliGlobalOptions,
+  explicitPaths: string[],
+  cwd: string,
+): Promise<void> {
+  const configPath = resolveConfigPath(cwd);
+  const cacheFile = baselinePath(cwd);
+  let lastBaselineMtime = existsSync(cacheFile) ? statSync(cacheFile).mtimeMs : 0;
+
+  const runOnce = async (): Promise<void> => {
+    if (existsSync(cacheFile)) {
+      const mtime = statSync(cacheFile).mtimeMs;
+      if (mtime !== lastBaselineMtime) {
+        lastBaselineMtime = mtime;
+        if (!options.quiet) {
+          console.error('Baseline cache changed externally; reloading.');
+        }
+      }
+    }
+
+    const scanStart = performance.now();
+    const scanResult = await runScan(options, explicitPaths);
+    const scanElapsed = Math.round(performance.now() - scanStart);
+    renderOutput(scanResult.report, options);
+    if (!options.quiet) {
+      console.error(`(scan took ${scanElapsed}ms)`);
+    }
+  };
+
+  await runOnce();
+
+  let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+  const watcher = watch(cwd, { recursive: true }, (_eventType, filename) => {
+    if (typeof filename !== 'string') return;
+    const changedPath = resolve(cwd, filename);
+
+    if (configPath && changedPath === configPath) {
+      if (!options.quiet) {
+        console.error('Config changed; reloading and rescanning...');
+      }
+    }
+
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      void runOnce();
+    }, 100);
+  });
+
+  process.on('SIGINT', () => {
+    watcher.close();
+    process.exit(0);
+  });
+}
+
 function renderOutput(report: ProjectReport, options: CliGlobalOptions): void {
   if (options.suggest) {
     if (!options.quiet) {
@@ -504,7 +581,7 @@ export async function runCli({ start }: { start: number }): Promise<void> {
       .option('--tighten', 'tighten baseline allowances')
       .option('--fix', 'apply auto-fixes')
       .option('--doctor', 'run diagnostics')
-      .option('--watch', 'watch files and re-run (not implemented)')
+      .option('--watch', 'watch files and re-run')
       .option('--suggest', 'print remediation advice')
       .option('--heatmap', 'output migration ROI heatmap')
       .option('--ai-autopsy', 'show AI failure-mode breakdown')
@@ -551,6 +628,15 @@ export async function runCli({ start }: { start: number }): Promise<void> {
         const existing = existsSync(gitignorePath) ? readFileSync(gitignorePath, 'utf-8') : '';
         if (!existing.split(/\r?\n/).includes(gitignoreEntry)) {
           appendFileSync(gitignorePath, `${existing.endsWith('\n') || existing.length === 0 ? '' : '\n'}${gitignoreEntry}\n`);
+        }
+
+        const registryRefresh = await refreshRegistrySnapshot(cwd);
+        if (!options.quiet) {
+          if (registryRefresh.success) {
+            console.log('Updated shadcn/ui registry snapshot from network.');
+          } else {
+            console.log('Using bundled shadcn/ui registry snapshot (network refresh unavailable).');
+          }
         }
 
         if (cmdOptions.baseline) {
@@ -638,8 +724,8 @@ export async function runCli({ start }: { start: number }): Promise<void> {
       const cwd = resolve(options.workspace ?? process.cwd());
 
       if (options.watch) {
-        console.warn('Warning: --watch is not implemented');
-        process.exit(0);
+        await watchProject(options, paths, cwd);
+        return;
       }
 
       if (options.doctor) {

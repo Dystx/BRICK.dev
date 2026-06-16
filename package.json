@@ -46,6 +46,7 @@
   "files": [
     "dist",
     "bin",
+    "rules",
     "README.md",
     "LICENSE",
     "!dist/**/*.map"

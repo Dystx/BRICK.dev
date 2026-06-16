@@ -229,19 +229,10 @@ describe('--threads validation', () => {
   });
 });
 
-describe('unimplemented flag skeletons', () => {
-  it('--watch prints a warning and exits cleanly without scanning', async () => {
-    const dir = createTmpDir();
-    try {
-      const { exitCode, stdout, stderr } = await run(['--watch', '--workspace', dir]);
-      expect(exitCode).toBe(0);
-      expect(stderr).toMatch(/--watch is not implemented/i);
-      expect(stdout).toBe('');
-      expect(stderr).not.toMatch(/scan took/i);
-    } finally {
-      cleanupTempDir(dir);
-    }
+describe('--watch flag', () => {
+  it('is advertised in help without the "not implemented" note', async () => {
+    const { stdout } = await run(['--help']);
+    expect(stdout).toMatch(/watch files and re-run/);
+    expect(stdout).not.toMatch(/not implemented/i);
   });
-
-
 });

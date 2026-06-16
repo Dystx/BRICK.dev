@@ -16,8 +16,8 @@ export async function scanFile(
   registry?: RuleRegistry,
 ): Promise<FileScanResult> {
   try {
-    const { ast, nodeCount } = await parseFile(filePath);
-    const facts = extractFacts(filePath, ast, nodeCount);
+    const { ast, nodeCount, offset } = await parseFile(filePath);
+    const facts = extractFacts(filePath, ast, nodeCount, offset);
 
     const activeRegistry = registry ?? new RuleRegistry();
     if (!registry) {
