@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { discoverFiles } from '../src/discover';
+import { discoverFiles, findMonorepoRoot } from '../src/discover';
 import { DEFAULT_CONFIG } from '../src/config';
 import type { ResolvedConfig } from '../src/types';
 
@@ -77,5 +77,38 @@ describe('discoverFiles', () => {
   it('does not return files that do not exist', async () => {
     const files = await discoverFiles(dir, makeConfig({ include: ['missing/**/*.ts'] }));
     expect(files).toEqual([]);
+  });
+});
+
+describe('findMonorepoRoot', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = createTmpDir();
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('returns undefined when no monorepo marker is present', () => {
+    expect(findMonorepoRoot(dir)).toBeUndefined();
+  });
+
+  it('detects pnpm-workspace.yaml in the current directory', () => {
+    writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'packages:\n  - packages/*\n');
+    expect(findMonorepoRoot(dir)).toBe(dir);
+  });
+
+  it('detects turbo.json in the current directory', () => {
+    writeFileSync(join(dir, 'turbo.json'), '{}');
+    expect(findMonorepoRoot(dir)).toBe(dir);
+  });
+
+  it('walks up to find a monorepo marker', () => {
+    const pkgDir = join(dir, 'packages', 'web');
+    mkdirSync(pkgDir, { recursive: true });
+    writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'packages:\n  - packages/*\n');
+    expect(findMonorepoRoot(pkgDir)).toBe(dir);
   });
 });

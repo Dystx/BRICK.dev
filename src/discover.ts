@@ -1,9 +1,26 @@
 import { globby } from 'globby';
 import { minimatch } from 'minimatch';
-import { resolve, extname, relative, sep } from 'node:path';
+import { existsSync } from 'node:fs';
+import { resolve, extname, relative, sep, dirname, join } from 'node:path';
 import type { ResolvedConfig } from './types';
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.vue', '.svelte', '.astro']);
+const MONOREPO_MARKERS = ['pnpm-workspace.yaml', 'turbo.json'];
+
+export function findMonorepoRoot(cwd: string): string | undefined {
+  let current = resolve(cwd);
+  while (true) {
+    for (const marker of MONOREPO_MARKERS) {
+      if (existsSync(join(current, marker))) {
+        return current;
+      }
+    }
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return undefined;
+}
 
 export async function discoverFiles(cwd: string, config: ResolvedConfig): Promise<string[]> {
   const include = config.include.map((pattern) => resolve(cwd, pattern));

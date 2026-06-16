@@ -134,7 +134,7 @@ Global options:
   --format <pretty|json|sarif>          output format (default: pretty)
   --threads <n>                         number of worker threads
   --since <ref>                         only scan files changed since git ref
-  --workspace <path>                    workspace/project path (default: cwd)
+  --workspace <path>                    workspace/project path (default: auto-detect monorepo root, fallback cwd)
   --tighten                             tighten baseline allowances
   --fix                                 apply auto-fixes
   --doctor                              run diagnostics

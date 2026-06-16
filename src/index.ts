@@ -18,7 +18,7 @@ import { parseSync } from '@swc/core';
 
 import { loadConfig, DEFAULT_CONFIG, resolveConfigPath } from './config.js';
 import { buildDetectedConfig } from './wizard.js';
-import { discoverFiles } from './discover.js';
+import { discoverFiles, findMonorepoRoot } from './discover.js';
 import { runWizard } from './wizard.js';
 import {
   collectGitStats,
@@ -111,6 +111,22 @@ function parseThreads(value: string): number {
     throw new InvalidArgumentError('must be a positive integer');
   }
   return parsed;
+}
+
+function resolveScanCwd(options: Pick<CliGlobalOptions, 'workspace' | 'quiet'>): string {
+  let cwd = resolve(process.cwd());
+  if (options.workspace) {
+    cwd = resolve(cwd, options.workspace);
+  } else {
+    const monoRoot = findMonorepoRoot(cwd);
+    if (monoRoot && monoRoot !== cwd) {
+      if (!options.quiet) {
+        console.error(`Detected monorepo root: ${monoRoot}`);
+      }
+      cwd = monoRoot;
+    }
+  }
+  return cwd;
 }
 
 export function colorForSlop(slopIndex: number): string {
@@ -516,7 +532,7 @@ async function runScan(
   options: ScanRunOptions,
   explicitPaths?: string[],
 ): Promise<ScanRunResult> {
-  const cwd = resolve(options.workspace ?? process.cwd());
+  const cwd = resolveScanCwd(options);
   const configStart = performance.now();
   const loadedConfig = await loadConfig(cwd);
   const config: ResolvedConfig = options.framework
@@ -817,7 +833,7 @@ export async function runCli({ start }: { start: number }): Promise<void> {
       .option('--format <pretty|json|sarif>', 'output format', 'pretty')
       .option('--threads <n>', 'number of worker threads', parseThreads)
       .option('--since <ref>', 'only scan files changed since git ref')
-      .option('--workspace <path>', 'workspace/project path', process.cwd())
+      .option('--workspace <path>', 'workspace/project path (default: auto-detect monorepo root, fallback cwd)')
       .option('--tighten', 'tighten baseline allowances')
       .option('--fix', 'apply auto-fixes')
       .option('--doctor', 'run diagnostics')
@@ -838,7 +854,7 @@ export async function runCli({ start }: { start: number }): Promise<void> {
       .option('--yes', 'overwrite existing config and skip the wizard')
       .action(async (cmdOptions: { baseline?: boolean; yes?: boolean }, command: Command) => {
         const options = command.optsWithGlobals() as CliGlobalOptions;
-        const cwd = resolve(options.workspace ?? process.cwd());
+        const cwd = resolveScanCwd(options);
         const configPath = join(cwd, 'slop-audit.config.mjs');
         const detectedConfig = buildDetectedConfig(cwd);
         if (existsSync(configPath) && !cmdOptions.yes) {
@@ -908,7 +924,7 @@ export async function runCli({ start }: { start: number }): Promise<void> {
       .description('install the git pre-commit hook')
       .action(async (_cmdOptions: Record<string, unknown>, command: Command) => {
         const options = command.optsWithGlobals() as CliGlobalOptions;
-        const cwd = resolve(options.workspace ?? process.cwd());
+        const cwd = resolveScanCwd(options);
         if (hasHuskyDirectory(cwd)) {
           const result = installHook({ kind: 'husky', cwd });
           if (!options.quiet) {
@@ -935,7 +951,7 @@ export async function runCli({ start }: { start: number }): Promise<void> {
       .description('uninstall the git pre-commit hook')
       .action(async (_cmdOptions: Record<string, unknown>, command: Command) => {
         const options = command.optsWithGlobals() as CliGlobalOptions;
-        const cwd = resolve(options.workspace ?? process.cwd());
+        const cwd = resolveScanCwd(options);
         if (hasHuskyDirectory(cwd)) {
           const result = uninstallHook({ kind: 'husky', cwd });
           if (!options.quiet) {
@@ -985,7 +1001,7 @@ export async function runCli({ start }: { start: number }): Promise<void> {
       command: Command,
     ): Promise<void> => {
       const options = command.optsWithGlobals() as CliGlobalOptions;
-      const cwd = resolve(options.workspace ?? process.cwd());
+      const cwd = resolveScanCwd(options);
 
       if (options.watch) {
         await watchProject(options, paths, cwd);

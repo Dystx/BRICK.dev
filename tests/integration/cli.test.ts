@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeAll, beforeEach, afterEach } from 'vitest';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, symlinkSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, symlinkSync, realpathSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import type { BaselineCache, ProjectReport } from '../../src/types';
 import { DEFAULT_CONFIG } from '../../src/config';
@@ -849,6 +849,45 @@ describe('default scan subcommand', () => {
   it('works as the default command without the scan keyword', async () => {
     const { exitCode, stdout } = await run(['--workspace', dir, '--json']);
     expect(exitCode).toBe(0);
+    const report = JSON.parse(stdout) as ProjectReport;
+    expect(report.components.length).toBeGreaterThan(0);
+  });
+});
+
+describe('monorepo auto-detection', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = createTmpDir();
+    const pkgDir = join(dir, 'packages', 'web');
+    mkdirSync(join(pkgDir, 'src'), { recursive: true });
+    writeFileSync(
+      join(pkgDir, 'src', 'Button.tsx'),
+      'export function Button() { return <div className="w-[100px]">hi</div>; }',
+    );
+    writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'packages:\n  - packages/*\n');
+  });
+
+  afterEach(() => {
+    cleanupTempDir(dir);
+  });
+
+  it('discovers files from the monorepo root when run inside a package', async () => {
+    const root = realpathSync(dir);
+    const pkgDir = realpathSync(join(dir, 'packages', 'web'));
+    const { exitCode, stderr, stdout } = await run(['--json'], pkgDir);
+    expect(exitCode).toBe(0);
+    expect(stderr).toContain(`Detected monorepo root: ${root}`);
+    const report = JSON.parse(stdout) as ProjectReport;
+    expect(report.components.length).toBeGreaterThan(0);
+    expect(report.issues.some((i) => i.ruleId === 'visual/arbitrary-escape')).toBe(true);
+  });
+
+  it('localizes the scan when --workspace is provided', async () => {
+    const pkgDir = join(dir, 'packages', 'web');
+    const { exitCode, stderr, stdout } = await run(['--workspace', '.', '--json'], pkgDir);
+    expect(exitCode).toBe(0);
+    expect(stderr).not.toContain('Detected monorepo root');
     const report = JSON.parse(stdout) as ProjectReport;
     expect(report.components.length).toBeGreaterThan(0);
   });
