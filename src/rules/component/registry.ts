@@ -13,7 +13,7 @@ export interface RegistrySnapshot {
   components: Record<string, RegistryComponentSchema>;
 }
 
-const DEFAULT_REGISTRY_SNAPSHOT_URL = 'https://unpkg.com/slop-audit@latest/rules/shadcn-snapshot.json';
+const DEFAULT_REGISTRY_SNAPSHOT_URL = 'https://raw.githubusercontent.com/Dystx/BRICK.dev/main/rules/shadcn-snapshot.json';
 const DEFAULT_REFRESH_TIMEOUT_MS = 3000;
 
 function isRegistrySnapshot(value: unknown): value is RegistrySnapshot {

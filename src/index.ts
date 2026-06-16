@@ -185,6 +185,41 @@ export function serializeConfig(config: ResolvedConfig): string {
   return `export default ${serializeValue(config, 0)};\n`;
 }
 
+function diffConfig(existing: ResolvedConfig, proposed: ResolvedConfig): string[] {
+  const lines: string[] = [];
+  const topKeys = new Set([
+    ...Object.keys(existing),
+    ...Object.keys(proposed),
+  ]) as Set<keyof ResolvedConfig>;
+
+  for (const key of topKeys) {
+    if (key === 'rules') continue;
+    if (JSON.stringify(existing[key]) !== JSON.stringify(proposed[key])) {
+      lines.push(`- ${String(key)}: ${JSON.stringify(existing[key])}`);
+      lines.push(`+ ${String(key)}: ${JSON.stringify(proposed[key])}`);
+    }
+  }
+
+  const ruleIds = new Set([
+    ...Object.keys(existing.rules ?? {}),
+    ...Object.keys(proposed.rules ?? {}),
+  ]);
+  for (const id of ruleIds) {
+    const before = (existing.rules as Record<string, string | undefined> | undefined)?.[id];
+    const after = (proposed.rules as Record<string, string | undefined> | undefined)?.[id];
+    if (before !== after) {
+      lines.push(`- rules.${id}: ${JSON.stringify(before)}`);
+      lines.push(`+ rules.${id}: ${JSON.stringify(after)}`);
+    }
+  }
+
+  if (lines.length === 0) {
+    lines.push('(no proposed changes)');
+  }
+
+  return lines;
+}
+
 function buildBaselineCache(
   report: ProjectReport,
   configHash: string,
@@ -607,7 +642,12 @@ export async function runCli({ start }: { start: number }): Promise<void> {
         const cwd = resolve(options.workspace ?? process.cwd());
         const configPath = join(cwd, 'slop-audit.config.mjs');
         if (existsSync(configPath) && !cmdOptions.yes) {
+          const existing = await loadConfig(cwd);
           console.error(`Config file already exists: ${configPath}`);
+          console.error('Proposed changes:');
+          for (const line of diffConfig(existing, DEFAULT_CONFIG)) {
+            console.error(`  ${line}`);
+          }
           console.error('Use --yes to overwrite');
           process.exit(2);
         }
