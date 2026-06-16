@@ -1,8 +1,18 @@
 import { Command, InvalidArgumentError } from 'commander';
-import { appendFileSync, existsSync, readFileSync, realpathSync, statSync, watch, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  watch,
+  writeFileSync,
+} from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { performance } from 'node:perf_hooks';
-import os from 'node:os';
+import os, { tmpdir } from 'node:os';
 
 import { parseSync } from '@swc/core';
 
@@ -349,6 +359,23 @@ async function runDoctor(
     parserOk ? '@swc/core parser bindings load' : '@swc/core parser bindings failed to load',
     parserError || undefined,
   );
+
+  let jsxOk = false;
+  let jsxError = '';
+  if (parserOk) {
+    try {
+      parseSync('const El = () => <div className="x" />;', { syntax: 'typescript', tsx: true });
+      jsxOk = true;
+    } catch (err) {
+      ok = false;
+      jsxError = err instanceof Error ? err.message : String(err);
+    }
+  }
+  push(
+    mark(jsxOk),
+    jsxOk ? '@swc/core JSX parser bindings load' : '@swc/core JSX parser bindings failed to load',
+    jsxError || undefined,
+  );
   lines.push('');
 
   lines.push('Git');
@@ -366,6 +393,42 @@ async function runDoctor(
     ok = false;
     push(mark(false), 'HEAD not readable');
   }
+  lines.push('');
+
+  lines.push('Workers');
+  let workersOk = false;
+  let workersError = '';
+  try {
+    const dir = mkdtempSync(join(tmpdir(), 'slop-audit-doctor-'));
+    const sampleFile = join(dir, 'test.tsx');
+    writeFileSync(sampleFile, 'export function Test() { return <div className="x" />; }');
+    const sampleConfig: ResolvedConfig = {
+      include: [],
+      exclude: [],
+      rules: {},
+      frameworkMultipliers: {},
+      ruleConfig: {},
+      contextTaxCaps: { cleanCap: 0, standardCap: 0 },
+      arbitraryValueAllowlist: [],
+      thresholds: { meanSlop: 0, p90Slop: 0, individualSlopThreshold: 0 },
+      wcag: { targetSizeExemptSelectors: [] },
+    };
+    const pool = new WorkerPool({ config: sampleConfig, threadCount: 1 });
+    const results = await pool.scan([sampleFile]);
+    workersOk = results.length === 1 && results[0].parseError === undefined;
+    if (!workersOk) {
+      workersError = results[0]?.parseError ?? 'worker returned unexpected result';
+    }
+    rmSync(dir, { recursive: true, force: true });
+  } catch (err) {
+    ok = false;
+    workersError = err instanceof Error ? err.message : String(err);
+  }
+  push(
+    mark(workersOk),
+    workersOk ? 'Worker pool can parse a sample file' : 'Worker pool failed to parse a sample file',
+    workersError || undefined,
+  );
   lines.push('');
 
   lines.push('Baseline');
