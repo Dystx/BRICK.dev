@@ -213,6 +213,7 @@ interface ScanRunResult {
   scores: ComponentScore[];
   config: ResolvedConfig;
   baseline?: BaselineCache;
+  configElapsed: number;
 }
 
 interface DoctorResult {
@@ -332,10 +333,12 @@ async function runScan(
   explicitPaths?: string[],
 ): Promise<ScanRunResult> {
   const cwd = resolve(options.workspace ?? process.cwd());
+  const configStart = performance.now();
   const loadedConfig = await loadConfig(cwd);
   const config: ResolvedConfig = options.framework
     ? { ...loadedConfig, framework: options.framework }
     : loadedConfig;
+  const configElapsed = Math.round(performance.now() - configStart);
 
   let files: string[];
   if (explicitPaths && explicitPaths.length > 0) {
@@ -459,7 +462,7 @@ async function runScan(
     baseline: baselineMeta,
   };
 
-  return { report, scores, config, baseline };
+  return { report, scores, config, baseline, configElapsed };
 }
 
 export async function scanProject(options: ScanProjectOptions): Promise<ProjectReport> {
@@ -489,7 +492,10 @@ async function watchProject(
 
     const scanStart = performance.now();
     const scanResult = await runScan(options, explicitPaths);
-    const scanElapsed = Math.round(performance.now() - scanStart);
+    const scanElapsed = Math.max(
+      0,
+      Math.round(performance.now() - scanStart) - scanResult.configElapsed,
+    );
     renderOutput(scanResult.report, options);
     if (!options.quiet) {
       console.error(`(scan took ${scanElapsed}ms)`);
@@ -739,7 +745,10 @@ export async function runCli({ start }: { start: number }): Promise<void> {
 
       const scanStart = performance.now();
       let scanResult = await runScan(options, paths);
-      let scanElapsed = Math.round(performance.now() - scanStart);
+      let scanElapsed = Math.max(
+        0,
+        Math.round(performance.now() - scanStart) - scanResult.configElapsed,
+      );
 
       let skippedFixes = 0;
       if (options.fix) {
@@ -757,7 +766,10 @@ export async function runCli({ start }: { start: number }): Promise<void> {
         }
         const rescanStart = performance.now();
         scanResult = await runScan(options, paths);
-        const rescanElapsed = Math.round(performance.now() - rescanStart);
+        const rescanElapsed = Math.max(
+          0,
+          Math.round(performance.now() - rescanStart) - scanResult.configElapsed,
+        );
         if (!options.quiet) {
           console.error(`(rescan took ${rescanElapsed}ms)`);
         }
