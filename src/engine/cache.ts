@@ -117,13 +117,13 @@ export function validateBaseline(
       return {
         valid: false,
         fatal: true,
-        reason: `baseline major version mismatch (${cache.version} vs ${BASELINE_VERSION})`,
+        reason: `Major version upgrade detected. Please run \`slop-audit init --baseline\` to regenerate.`,
       };
     }
     return {
       valid: true,
       warning: true,
-      reason: `baseline minor/patch version mismatch (${cache.version} vs ${BASELINE_VERSION})`,
+      reason: `Baseline generated with v${cache.version}. Consider regenerating with \`--baseline\` to capture new rule coverage.`,
     };
   }
 

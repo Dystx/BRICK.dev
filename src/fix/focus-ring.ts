@@ -1,8 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { VERSION } from '../types.js';
 import type { Issue } from '../types.js';
 
-const ANCHOR = '/* @slop-audit:v1.0.0:fix:focus-ring */';
+const ANCHOR = `/* @slop-audit:v${VERSION}:fix:focus-ring */`;
 const CSS_BLOCK = `${ANCHOR}\n:focus-visible {\n  outline: 2px solid currentColor;\n  outline-offset: 2px;\n}\n`;
 
 export function applyFocusRingFix(issue: Issue): {

@@ -137,7 +137,7 @@ describe('cache', () => {
     expect(validateBaseline(cache, cache.config_hash, cache.git_head)).toEqual({
       valid: false,
       fatal: true,
-      reason: 'baseline major version mismatch (0.0.0 vs 1.0.0)',
+      reason: 'Major version upgrade detected. Please run `slop-audit init --baseline` to regenerate.',
     });
   });
 
@@ -146,7 +146,7 @@ describe('cache', () => {
     expect(validateBaseline(cache, cache.config_hash, cache.git_head)).toEqual({
       valid: true,
       warning: true,
-      reason: 'baseline minor/patch version mismatch (1.0.1 vs 1.0.0)',
+      reason: 'Baseline generated with v1.0.1. Consider regenerating with `--baseline` to capture new rule coverage.',
     });
   });
 });

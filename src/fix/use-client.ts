@@ -1,7 +1,8 @@
+import { VERSION } from '../types.js';
 import type { Issue } from '../types.js';
 
 const DIRECTIVE_RE = /^["']use client["'];?/;
-const ANCHOR = '@slop-audit:v1.0.0:fix:use-client';
+const ANCHOR = `@slop-audit:v${VERSION}:fix:use-client`;
 
 export function applyUseClientFix(source: string, _issue: Issue): {
   source: string;
