@@ -27,7 +27,7 @@ import {
   getStagedFiles,
   getFilesSince,
 } from './git.js';
-import { installHook, uninstallHook } from './installer.js';
+import { hasHuskyDirectory, installHook, uninstallHook } from './installer.js';
 import {
   checkRegistrySnapshotFreshness,
   refreshRegistrySnapshot,
@@ -877,12 +877,21 @@ export async function runCli({ start }: { start: number }): Promise<void> {
       .action(async (_cmdOptions: Record<string, unknown>, command: Command) => {
         const options = command.optsWithGlobals() as CliGlobalOptions;
         const cwd = resolve(options.workspace ?? process.cwd());
+        if (hasHuskyDirectory(cwd)) {
+          const result = installHook({ kind: 'husky', cwd });
+          if (!options.quiet) {
+            console.log(result.message);
+          }
+          process.exit(result.exitCode);
+          return;
+        }
         const root = getGitRoot(cwd);
         if (!root) {
           console.error('Not a git repository');
           process.exit(2);
+          return;
         }
-        const result = installHook(root);
+        const result = installHook({ kind: 'git', gitRoot: root });
         if (!options.quiet) {
           console.log(result.message);
         }
@@ -895,12 +904,21 @@ export async function runCli({ start }: { start: number }): Promise<void> {
       .action(async (_cmdOptions: Record<string, unknown>, command: Command) => {
         const options = command.optsWithGlobals() as CliGlobalOptions;
         const cwd = resolve(options.workspace ?? process.cwd());
+        if (hasHuskyDirectory(cwd)) {
+          const result = uninstallHook({ kind: 'husky', cwd });
+          if (!options.quiet) {
+            console.log(result.message);
+          }
+          process.exit(result.exitCode);
+          return;
+        }
         const root = getGitRoot(cwd);
         if (!root) {
           console.error('Not a git repository');
           process.exit(2);
+          return;
         }
-        const result = uninstallHook(root);
+        const result = uninstallHook({ kind: 'git', gitRoot: root });
         if (!options.quiet) {
           console.log(result.message);
         }

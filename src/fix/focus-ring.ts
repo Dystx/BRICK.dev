@@ -6,6 +6,21 @@ import type { Issue } from '../types.js';
 const ANCHOR = `/* @slop-audit:v${VERSION}:fix:focus-ring */`;
 const CSS_BLOCK = `${ANCHOR}\n:focus-visible {\n  outline: 2px solid currentColor;\n  outline-offset: 2px;\n}\n`;
 
+export function computeFocusRingPatch(
+  original: string,
+  _issue: Issue,
+): { original: string; modified: string } | null {
+  if (original.includes(ANCHOR)) {
+    return null;
+  }
+
+  const newContent =
+    original.length > 0 && !original.endsWith('\n')
+      ? `${original}\n\n${CSS_BLOCK}`
+      : `${original}${CSS_BLOCK}`;
+  return { original, modified: newContent };
+}
+
 export function applyFocusRingFix(issue: Issue): {
   applied: boolean;
   reason?: string;
@@ -19,17 +34,15 @@ export function applyFocusRingFix(issue: Issue): {
     return { applied: false, reason: 'No globalCssTarget configured' };
   }
 
-  const existing = existsSync(targetFile) ? readFileSync(targetFile, 'utf-8') : '';
-  if (existing.includes(ANCHOR)) {
+  const original = existsSync(targetFile) ? readFileSync(targetFile, 'utf-8') : '';
+  const patch = computeFocusRingPatch(original, issue);
+  if (!patch) {
     return { applied: false, reason: 'Focus-ring CSS block already present' };
   }
 
-  const newContent = existing.length > 0 && !existing.endsWith('\n')
-    ? `${existing}\n\n${CSS_BLOCK}`
-    : `${existing}${CSS_BLOCK}`;
   mkdirSync(dirname(targetFile), { recursive: true });
   try {
-    writeFileSync(targetFile, newContent);
+    writeFileSync(targetFile, patch.modified);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return { applied: false, reason: `Could not write CSS: ${message}` };

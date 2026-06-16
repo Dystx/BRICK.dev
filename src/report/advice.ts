@@ -1,4 +1,6 @@
 import type { Category, ProjectReport } from '../types.js';
+import { generateFixDiffs } from './diff.js';
+import { formatGirBoundaries } from './gir.js';
 
 const remediation: Record<Category, string> = {
   visual:
@@ -20,7 +22,7 @@ const remediation: Record<Category, string> = {
     'Eliminate unnecessary re-renders, defer non-critical work, and audit bundle imports.',
 };
 
-export function formatAdvice(report: ProjectReport): string {
+function formatNaturalLanguage(report: ProjectReport): string {
   const categories = (Object.entries(report.categoryScores) as [Category, number][])
     .filter(([, score]) => score > 0)
     .sort((a, b) => b[1] - a[1]);
@@ -30,9 +32,6 @@ export function formatAdvice(report: ProjectReport): string {
   }
 
   const lines: string[] = [];
-  lines.push('Remediation advice');
-  lines.push('');
-
   for (const [category, score] of categories) {
     const scoreText = score.toFixed(1);
     lines.push(`• ${category} (${scoreText}): ${remediation[category]}`);
@@ -46,4 +45,45 @@ export function formatAdvice(report: ProjectReport): string {
   );
 
   return lines.join('\n');
+}
+
+function formatAstPatches(report: ProjectReport): string {
+  const patches = generateFixDiffs(report).filter((patch) => patch.diff.length > 0);
+  if (patches.length === 0) {
+    return 'No safe localized patches available.';
+  }
+
+  const lines: string[] = [];
+  for (const patch of patches) {
+    lines.push(patch.diff);
+    if (patch.skipped.length > 0) {
+      lines.push('# Skipped patches:');
+      for (const skipped of patch.skipped) {
+        lines.push(`#   [${skipped.ruleId}] ${skipped.reason}`);
+      }
+    }
+  }
+  return lines.join('\n');
+}
+
+export function formatAdvice(report: ProjectReport): string {
+  const sections: string[] = [];
+
+  sections.push('=== Tier 1: AST Patch (Unified Diff) ===');
+  sections.push('');
+  sections.push(formatAstPatches(report));
+  sections.push('');
+
+  sections.push('=== Tier 2: Natural Language Guidance ===');
+  sections.push('');
+  sections.push(formatNaturalLanguage(report));
+  sections.push('');
+
+  sections.push('=== Tier 3: GIR Boundary Markers ===');
+  sections.push('');
+  const gir = formatGirBoundaries(report);
+  sections.push(gir.length > 0 ? gir : 'No clean-room refactor boundaries identified.');
+  sections.push('');
+
+  return sections.join('\n');
 }

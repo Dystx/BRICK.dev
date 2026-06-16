@@ -544,7 +544,15 @@ describe('scan-based commands', () => {
   it('prints remediation advice for sloppy projects', async () => {
     const { exitCode, stdout } = await run(['suggest', '--workspace', dir]);
     expect(exitCode).toBe(0);
-    expect(stdout).toContain('Remediation advice');
+    expect(stdout).toContain('=== Tier 2: Natural Language Guidance ===');
+  });
+
+  it('prints three-tier suggest output with diffs and GIR markers', async () => {
+    const { exitCode, stdout } = await run(['suggest', '--workspace', dir]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain('=== Tier 1: AST Patch (Unified Diff) ===');
+    expect(stdout).toContain('=== Tier 2: Natural Language Guidance ===');
+    expect(stdout).toContain('=== Tier 3: GIR Boundary Markers ===');
   });
 
   it('exits with code 1 and reports issues when thresholds are exceeded', async () => {

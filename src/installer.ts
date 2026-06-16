@@ -1,6 +1,7 @@
 import {
   chmodSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   writeFileSync,
@@ -17,8 +18,34 @@ export type HookResult = {
   exitCode: 0 | 2;
 };
 
-function hookPath(gitRoot: string): string {
-  return join(gitRoot, '.git', 'hooks', 'pre-commit');
+export type HookTarget =
+  | { kind: 'git'; gitRoot: string }
+  | { kind: 'husky'; cwd: string };
+
+export function hasHuskyDirectory(cwd: string): boolean {
+  const huskyPath = join(cwd, '.husky');
+  return existsSync(huskyPath) && lstatSync(huskyPath).isDirectory();
+}
+
+function resolveHookPath(target: HookTarget): string {
+  if (target.kind === 'husky') {
+    return join(target.cwd, '.husky', 'pre-commit');
+  }
+  return join(target.gitRoot, '.git', 'hooks', 'pre-commit');
+}
+
+function ensureParentDir(target: HookTarget, path: string): void {
+  if (target.kind === 'husky') {
+    mkdirSync(join(target.cwd, '.husky'), { recursive: true });
+  } else {
+    mkdirSync(join(target.gitRoot, '.git', 'hooks'), { recursive: true });
+  }
+}
+
+function setExecutable(path: string, target: HookTarget): void {
+  if (target.kind === 'git') {
+    chmodSync(path, 0o755);
+  }
 }
 
 function readHookContent(path: string): string {
@@ -33,8 +60,9 @@ function sentinelsPresent(content: string): { begin: boolean; end: boolean } {
   };
 }
 
-export function installHook(gitRoot: string): HookResult {
-  const path = hookPath(gitRoot);
+export function installHook(target: HookTarget): HookResult {
+  const path = resolveHookPath(target);
+  const hookType = target.kind === 'husky' ? 'Husky pre-commit' : 'pre-commit';
 
   if (existsSync(path)) {
     const content = readHookContent(path);
@@ -43,7 +71,7 @@ export function installHook(gitRoot: string): HookResult {
     if (begin && end) {
       return {
         ok: true,
-        message: 'Hook already installed',
+        message: `Hook already installed`,
         exitCode: 0,
       };
     }
@@ -53,7 +81,7 @@ export function installHook(gitRoot: string): HookResult {
       const missing = begin ? END_SENTINEL : BEGIN_SENTINEL;
       return {
         ok: false,
-        message: `Malformed pre-commit hook: found ${found} without matching ${missing}`,
+        message: `Malformed ${hookType} hook: found ${found} without matching ${missing}`,
         exitCode: 2,
       };
     }
@@ -62,27 +90,28 @@ export function installHook(gitRoot: string): HookResult {
       content.length > 0 && !content.endsWith('\n') ? `${content}\n` : content;
 
     writeFileSync(path, `${normalized}${SENTINEL_BLOCK}`);
-    chmodSync(path, 0o755);
+    setExecutable(path, target);
     return {
       ok: true,
-      message: 'Installed pre-commit hook',
+      message: `Installed ${hookType} hook`,
       exitCode: 0,
     };
   }
 
-  mkdirSync(join(gitRoot, '.git', 'hooks'), { recursive: true });
-  writeFileSync(path, SENTINEL_BLOCK, { mode: 0o755 });
-  chmodSync(path, 0o755);
+  ensureParentDir(target, path);
+  writeFileSync(path, SENTINEL_BLOCK);
+  setExecutable(path, target);
 
   return {
     ok: true,
-    message: 'Installed pre-commit hook',
+    message: `Installed ${hookType} hook`,
     exitCode: 0,
   };
 }
 
-export function uninstallHook(gitRoot: string): HookResult {
-  const path = hookPath(gitRoot);
+export function uninstallHook(target: HookTarget): HookResult {
+  const path = resolveHookPath(target);
+  const hookType = target.kind === 'husky' ? 'Husky pre-commit' : 'pre-commit';
 
   if (!existsSync(path)) {
     return {
@@ -110,7 +139,7 @@ export function uninstallHook(gitRoot: string): HookResult {
   if (beginIndex === -1 || endIndex === -1 || beginIndex > endIndex) {
     return {
       ok: false,
-      message: 'Malformed pre-commit hook: sentinel block is incomplete',
+      message: `Malformed ${hookType} hook: sentinel block is incomplete`,
       exitCode: 2,
     };
   }
@@ -132,7 +161,7 @@ export function uninstallHook(gitRoot: string): HookResult {
 
   return {
     ok: true,
-    message: 'Uninstalled pre-commit hook',
+    message: `Uninstalled ${hookType} hook`,
     exitCode: 0,
   };
 }
