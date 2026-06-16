@@ -138,6 +138,21 @@ async function askNumber(
   return Number.isFinite(parsed) ? parsed : defaultValue;
 }
 
+export function buildDetectedConfig(cwd: string): ResolvedConfig {
+  const detected = detectProjectFacts(cwd);
+  return {
+    ...DEFAULT_CONFIG,
+    framework: detected.framework === 'other' ? undefined : detected.framework,
+    include: detected.include,
+    styling: detected.styling,
+    uiLibrary: detected.uiLibrary === 'none' ? undefined : detected.uiLibrary,
+    baseSpacing: detected.baseSpacing,
+    typeScaleRatio: 1.2,
+    arbitraryTolerance: 'balanced',
+    strictness: 'balanced',
+  };
+}
+
 export async function runWizard(cwd: string, options: WizardOptions = {}): Promise<ResolvedConfig> {
   const detected = detectProjectFacts(cwd);
   const input = options.input ?? process.stdin;

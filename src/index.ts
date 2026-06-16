@@ -17,6 +17,7 @@ import os, { tmpdir } from 'node:os';
 import { parseSync } from '@swc/core';
 
 import { loadConfig, DEFAULT_CONFIG, resolveConfigPath } from './config.js';
+import { buildDetectedConfig } from './wizard.js';
 import { discoverFiles } from './discover.js';
 import { runWizard } from './wizard.js';
 import {
@@ -807,11 +808,12 @@ export async function runCli({ start }: { start: number }): Promise<void> {
         const options = command.optsWithGlobals() as CliGlobalOptions;
         const cwd = resolve(options.workspace ?? process.cwd());
         const configPath = join(cwd, 'slop-audit.config.mjs');
+        const detectedConfig = buildDetectedConfig(cwd);
         if (existsSync(configPath) && !cmdOptions.yes) {
           const existing = await loadConfig(cwd);
           console.error(`Config file already exists: ${configPath}`);
           console.error('Proposed changes:');
-          for (const line of diffConfig(existing, DEFAULT_CONFIG)) {
+          for (const line of diffConfig(existing, detectedConfig)) {
             console.error(`  ${line}`);
           }
           console.error('Use --yes to overwrite');
@@ -820,13 +822,13 @@ export async function runCli({ start }: { start: number }): Promise<void> {
 
         let config: ResolvedConfig;
         if (cmdOptions.yes) {
-          config = DEFAULT_CONFIG;
+          config = detectedConfig;
         } else if (process.stdin.isTTY) {
           config = await runWizard(cwd);
         } else {
-          config = DEFAULT_CONFIG;
+          config = detectedConfig;
           if (!options.quiet) {
-            console.warn('Running in non-interactive mode; using default config. Use --yes to suppress this warning.');
+            console.warn('Running in non-interactive mode; using detected stack config. Use --yes to suppress this warning.');
           }
         }
 

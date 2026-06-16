@@ -107,6 +107,17 @@ describe('init command', () => {
     expect(typeof baseline.git_head).toBe('string');
   });
 
+  it('refuses to overwrite existing config without --yes and prints a detected-stack diff', async () => {
+    writeFileSync(join(dir, 'slop-audit.config.mjs'), serializeConfig(DEFAULT_CONFIG));
+
+    const { exitCode, stderr } = await run(['init', '--workspace', dir]);
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain('Config file already exists');
+    expect(stderr).toContain('Proposed changes:');
+    // In an empty temp directory the detected include differs from DEFAULT_CONFIG.
+    expect(stderr).toContain('include:');
+  });
+
   it('overwrites a stale baseline with current scan data', async () => {
     writeGitRepo(dir);
     await execFileAsync('git', ['init'], { cwd: dir });
