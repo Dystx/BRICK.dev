@@ -12,6 +12,7 @@ export default defineConfig({
   sourcemap: true,
   dts: { entry: { index: 'src/index.ts' } },
   clean: true,
+  shims: true,
   external: [
     '@swc/core',
     'commander',
