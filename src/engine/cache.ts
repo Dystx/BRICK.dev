@@ -6,6 +6,18 @@ import type { BaselineCache, ResolvedConfig } from '../types';
 
 const BASELINE_VERSION = VERSION;
 
+interface VersionParts {
+  major: number;
+  minor: number;
+  patch: number;
+}
+
+function parseVersion(version: string): VersionParts | undefined {
+  const parts = version.split('.').map((p) => parseInt(p, 10));
+  if (parts.length !== 3 || parts.some((p) => Number.isNaN(p))) return undefined;
+  return { major: parts[0], minor: parts[1], patch: parts[2] };
+}
+
 function sanitizeForHash(value: unknown): unknown {
   if (value instanceof RegExp) {
     return { __type: 'RegExp', source: value.source, flags: value.flags };
@@ -34,7 +46,7 @@ export function baselinePath(projectPath: string): string {
 function isBaselineCache(value: unknown): value is BaselineCache {
   if (!value || typeof value !== 'object') return false;
   const obj = value as Record<string, unknown>;
-  if (obj.version !== BASELINE_VERSION) return false;
+  if (typeof obj.version !== 'string') return false;
   if (typeof obj.config_hash !== 'string') return false;
   if (typeof obj.git_head !== 'string') return false;
   if (typeof obj.baseline_created !== 'string') return false;
@@ -86,13 +98,42 @@ export function tightenBaseline(cache: BaselineCache): BaselineCache {
   return next;
 }
 
+export interface BaselineValidation {
+  valid: boolean;
+  reason?: string;
+  fatal?: boolean;
+  warning?: boolean;
+}
+
 export function validateBaseline(
   cache: BaselineCache,
   configHash: string,
   gitHead: string,
-): { valid: boolean; reason?: string } {
-  if (cache.version !== BASELINE_VERSION) return { valid: false, reason: 'baseline version mismatch' };
-  if (cache.config_hash !== configHash) return { valid: false, reason: 'config_hash mismatch' };
-  if (cache.git_head !== gitHead) return { valid: false, reason: 'git_head mismatch' };
+): BaselineValidation {
+  if (cache.version !== BASELINE_VERSION) {
+    const current = parseVersion(BASELINE_VERSION);
+    const stored = parseVersion(cache.version);
+    if (current === undefined || stored === undefined || current.major !== stored.major) {
+      return {
+        valid: false,
+        fatal: true,
+        reason: `baseline major version mismatch (${cache.version} vs ${BASELINE_VERSION})`,
+      };
+    }
+    return {
+      valid: true,
+      warning: true,
+      reason: `baseline minor/patch version mismatch (${cache.version} vs ${BASELINE_VERSION})`,
+    };
+  }
+
+  if (cache.config_hash !== configHash) {
+    return { valid: false, reason: 'config_hash mismatch' };
+  }
+
+  if (cache.git_head !== gitHead) {
+    return { valid: false, reason: 'git_head mismatch' };
+  }
+
   return { valid: true };
 }

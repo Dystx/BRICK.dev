@@ -1,5 +1,5 @@
 import { Command, InvalidArgumentError } from 'commander';
-import { existsSync, realpathSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import os from 'node:os';
@@ -8,6 +8,7 @@ import { parseSync } from '@swc/core';
 
 import { loadConfig, DEFAULT_CONFIG, resolveConfigPath } from './config.js';
 import { discoverFiles } from './discover.js';
+import { runWizard } from './wizard.js';
 import {
   collectGitStats,
   getGitHead,
@@ -37,6 +38,7 @@ import { formatJson } from './report/json.js';
 import { formatSarif } from './report/sarif.js';
 import { formatAdvice } from './report/advice.js';
 import { formatHeatmap } from './report/heatmap.js';
+import { formatAutopsy } from './report/autopsy.js';
 import { applyFixes } from './fix/index.js';
 import {
   VERSION,
@@ -79,6 +81,7 @@ interface CliGlobalOptions extends ScanRunOptions {
   json?: true | string;
   suggest?: boolean;
   heatmap?: boolean;
+  aiAutopsy?: boolean;
 }
 
 function parseThreads(value: string): number {
@@ -341,16 +344,50 @@ async function runScan(
 
   if (baselineCache) {
     const validation = validateBaseline(baselineCache, configHash, gitHead);
-    if (validation.valid) {
+    if (validation.fatal) {
+      console.error(`Baseline error: ${validation.reason}`);
+      throw new Error(validation.reason);
+    }
+    if (validation.valid && !validation.warning) {
       baseline = options.tighten ? tightenBaseline(baselineCache) : baselineCache;
+      if (options.tighten && baseline) {
+        saveBaseline(cwd, baseline);
+        if (!options.quiet) {
+          console.warn(
+            `Tightened baseline (revision ${baseline.baseline_revision}); scores reduced by 10%.`,
+          );
+        }
+      }
       baselineMeta = {
         active: true,
         version: baseline.version,
         baselineRevision: baseline.baseline_revision,
         createdAt: baseline.baseline_created,
       };
-    } else if (!options.quiet) {
-      console.warn(`Baseline invalid: ${validation.reason}; ignoring.`);
+    } else {
+      if (validation.warning && !options.quiet) {
+        console.warn(`Baseline warning: ${validation.reason}; continuing with baseline.`);
+      }
+      if (!validation.valid && !options.quiet) {
+        console.warn(`Baseline invalid: ${validation.reason}; ignoring.`);
+      }
+      if (validation.valid && validation.warning) {
+        baseline = options.tighten ? tightenBaseline(baselineCache) : baselineCache;
+        if (options.tighten && baseline) {
+          saveBaseline(cwd, baseline);
+          if (!options.quiet) {
+            console.warn(
+              `Tightened baseline (revision ${baseline.baseline_revision}); scores reduced by 10%.`,
+            );
+          }
+        }
+        baselineMeta = {
+          active: true,
+          version: baseline.version,
+          baselineRevision: baseline.baseline_revision,
+          createdAt: baseline.baseline_created,
+        };
+      }
     }
   }
 
@@ -415,6 +452,13 @@ function renderOutput(report: ProjectReport, options: CliGlobalOptions): void {
     return;
   }
 
+  if (options.aiAutopsy) {
+    if (!options.quiet) {
+      console.log(formatAutopsy(report));
+    }
+    return;
+  }
+
   if (options.json) {
     const json = formatJson(report);
     if (typeof options.json === 'string') {
@@ -463,6 +507,7 @@ export async function runCli({ start }: { start: number }): Promise<void> {
       .option('--watch', 'watch files and re-run (not implemented)')
       .option('--suggest', 'print remediation advice')
       .option('--heatmap', 'output migration ROI heatmap')
+      .option('--ai-autopsy', 'show AI failure-mode breakdown')
       .option('--quiet', 'suppress non-error output')
       .option('--json [path]', 'write JSON report to path or stdout')
       .option('--staged', 'scan only staged files')
@@ -473,7 +518,7 @@ export async function runCli({ start }: { start: number }): Promise<void> {
       .command('init')
       .description('create a slop-audit config file')
       .option('--baseline', 'run an initial scan and save a baseline')
-      .option('--yes', 'overwrite existing config')
+      .option('--yes', 'overwrite existing config and skip the wizard')
       .action(async (cmdOptions: { baseline?: boolean; yes?: boolean }, command: Command) => {
         const options = command.optsWithGlobals() as CliGlobalOptions;
         const cwd = resolve(options.workspace ?? process.cwd());
@@ -483,10 +528,31 @@ export async function runCli({ start }: { start: number }): Promise<void> {
           console.error('Use --yes to overwrite');
           process.exit(2);
         }
-        writeFileSync(configPath, serializeConfig(DEFAULT_CONFIG));
+
+        let config: ResolvedConfig;
+        if (cmdOptions.yes) {
+          config = DEFAULT_CONFIG;
+        } else if (process.stdin.isTTY) {
+          config = await runWizard(cwd);
+        } else {
+          config = DEFAULT_CONFIG;
+          if (!options.quiet) {
+            console.warn('Running in non-interactive mode; using default config. Use --yes to suppress this warning.');
+          }
+        }
+
+        writeFileSync(configPath, serializeConfig(config));
         if (!options.quiet) {
           console.log(`Created ${configPath}`);
         }
+
+        const gitignorePath = join(cwd, '.gitignore');
+        const gitignoreEntry = '.slop-audit/';
+        const existing = existsSync(gitignorePath) ? readFileSync(gitignorePath, 'utf-8') : '';
+        if (!existing.split(/\r?\n/).includes(gitignoreEntry)) {
+          appendFileSync(gitignorePath, `${existing.endsWith('\n') || existing.length === 0 ? '' : '\n'}${gitignoreEntry}\n`);
+        }
+
         if (cmdOptions.baseline) {
           const { staged, since, aiOnly, humanOnly, ignoreWcag22, ...baselineOptions } = options;
           const { report, config } = await runScan({
@@ -589,14 +655,19 @@ export async function runCli({ start }: { start: number }): Promise<void> {
       let scanResult = await runScan(options, paths);
       let scanElapsed = Math.round(performance.now() - scanStart);
 
+      let skippedFixes = 0;
       if (options.fix) {
         const fixResults = applyFixes(scanResult.report.issues);
         const fixedFileCount = fixResults.filter((r) => r.applied.length > 0).length;
         const fixedIssueCount = fixResults.reduce((sum, r) => sum + r.applied.length, 0);
+        skippedFixes = fixResults.reduce((sum, r) => sum + r.skipped.length, 0);
         if (!options.quiet) {
           console.error(
             `Applied ${fixedIssueCount} fix(es) across ${fixedFileCount} file(s).`,
           );
+          if (skippedFixes > 0) {
+            console.error(`${skippedFixes} fix(es) could not be applied.`);
+          }
         }
         const rescanStart = performance.now();
         scanResult = await runScan(options, paths);
@@ -624,16 +695,29 @@ export async function runCli({ start }: { start: number }): Promise<void> {
       let exitCode: 0 | 1;
       let stagedReason: 'individual' | 'mean' | 'p90' | undefined;
 
-      if (options.staged && baseline) {
-        const check = stagedVirtualMeanThresholdExceeded(scores, baseline, config);
-        exitCode = check.exceeded ? 1 : 0;
-        stagedReason = check.reason;
+      if (options.staged) {
+        if (baseline) {
+          const check = stagedVirtualMeanThresholdExceeded(scores, baseline, config);
+          exitCode = check.exceeded ? 1 : 0;
+          stagedReason = check.reason;
+        } else {
+          // Degrade to strict individual threshold gating when no valid baseline is available.
+          const maxStagedScore = Math.max(...scores.map((score) => score.adjustedScore), 0);
+          exitCode = maxStagedScore > config.thresholds.individualSlopThreshold ? 1 : 0;
+          stagedReason = exitCode === 1 ? 'individual' : undefined;
+        }
       } else {
         exitCode = thresholdExceeded(report, config) ? 1 : 0;
       }
 
+      if (options.fix && skippedFixes > 0) {
+        exitCode = 1;
+      }
+
       if (exitCode === 1) {
-        if (options.staged) {
+        if (options.fix && skippedFixes > 0) {
+          console.error('--fix could not resolve all issues.');
+        } else if (options.staged) {
           if (stagedReason === 'mean') {
             console.error(
               'Gating failure: staged file(s) would raise project mean slop above threshold.',

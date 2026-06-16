@@ -1,6 +1,6 @@
 import type { Rule, Issue, RuleContext, ScanFacts } from '../../types';
 import { createRule } from '../rule';
-import { splitClassName, isSizingToken } from '../utils';
+import { splitClassName, isSizingToken, matchesAllowlist } from '../utils';
 
 function isPositiveSize(value: string | undefined): boolean {
   if (value === undefined || value.length === 0) return false;
@@ -9,7 +9,7 @@ function isPositiveSize(value: string | undefined): boolean {
 }
 
 export interface TargetSizeContext {
-  exemptSelectors: readonly string[];
+  exemptSelectors: readonly (string | RegExp)[];
 }
 
 export const targetSizeRule = createRule<TargetSizeContext>({
@@ -34,7 +34,7 @@ export const targetSizeRule = createRule<TargetSizeContext>({
       const classes = element.classNames.flatMap((fact) => splitClassName(fact.value));
 
       const isExempt = classes.some((className) =>
-        context.exemptSelectors.includes(className),
+        matchesAllowlist(className, context.exemptSelectors),
       );
       if (isExempt) {
         continue;

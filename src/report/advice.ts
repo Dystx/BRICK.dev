@@ -5,6 +5,8 @@ const remediation: Record<Category, string> = {
     'Audit arbitrary Tailwind values and inline styles; replace one-off values with design tokens.',
   typo:
     'Standardize type scales and align headings/body text with the design system typography scale.',
+  motion:
+    'Use motion tokens for durations, easings, transitions, and animations instead of arbitrary values.',
   wcag:
     'Add focus rings and minimum target sizes; verify color contrast and semantic landmarks.',
   layout:

@@ -9,6 +9,18 @@ import {
   isSizingToken,
   isFocusRingClass,
   isOutlineRemoval,
+  isHardcodedFontSize,
+  isHardcodedLineHeight,
+  isMagicLetterSpacing,
+  isNonTokenFontWeight,
+  isCustomFontFamily,
+  isArbitraryDuration,
+  isArbitraryEasing,
+  isArbitraryTransition,
+  isArbitraryAnimation,
+  isArbitraryZIndex,
+  isArbitraryShadow,
+  isArbitraryBorderRadius,
 } from '../../src/rules/utils';
 
 describe('splitClassName', () => {
@@ -69,21 +81,25 @@ describe('isLayoutArbitrary', () => {
 });
 
 describe('isArbitraryColor', () => {
-  it('returns true for color arbitrary values', () => {
-    expect(isArbitraryColor('bg-[red]')).toBe(true);
+  it('returns true for literal color arbitrary values', () => {
     expect(isArbitraryColor('text-[#fff]')).toBe(true);
-    expect(isArbitraryColor('border-[blue]')).toBe(true);
-    expect(isArbitraryColor('ring-[green]')).toBe(true);
-    expect(isArbitraryColor('shadow-[#000]')).toBe(true);
-    expect(isArbitraryColor('from-[blue]')).toBe(true);
-    expect(isArbitraryColor('to-[purple]')).toBe(true);
-    expect(isArbitraryColor('via-[pink]')).toBe(true);
-    expect(isArbitraryColor('stroke-[red]')).toBe(true);
-    expect(isArbitraryColor('fill-[yellow]')).toBe(true);
+    expect(isArbitraryColor('bg-[rgb(0,0,0)]')).toBe(true);
+    expect(isArbitraryColor('border-[rgba(0,0,0,0.5)]')).toBe(true);
+    expect(isArbitraryColor('shadow-[hsl(0,0%,0%)]')).toBe(true);
+    expect(isArbitraryColor('from-[oklch(0.7_0.1_240)]')).toBe(true);
+    expect(isArbitraryColor('to-[lab(50_0_0)]')).toBe(true);
+    expect(isArbitraryColor('via-[lch(50_0_0)]')).toBe(true);
+    expect(isArbitraryColor('stroke-[hwb(0_0%_0%)]')).toBe(true);
   });
 
-  it('returns true for empty bracket content', () => {
-    expect(isArbitraryColor('bg-[]')).toBe(true);
+  it('returns false for named color arbitrary values', () => {
+    expect(isArbitraryColor('bg-[red]')).toBe(false);
+    expect(isArbitraryColor('text-[blue]')).toBe(false);
+    expect(isArbitraryColor('border-[pink]')).toBe(false);
+  });
+
+  it('returns false for empty bracket content', () => {
+    expect(isArbitraryColor('bg-[]')).toBe(false);
   });
 
   it('returns false for non-arbitrary color values', () => {
@@ -94,6 +110,11 @@ describe('isArbitraryColor', () => {
   it('returns false for layout arbitrary values', () => {
     expect(isArbitraryColor('w-[100px]')).toBe(false);
     expect(isArbitraryColor('p-[1rem]')).toBe(false);
+  });
+
+  it('returns false for font-size arbitrary values', () => {
+    expect(isArbitraryColor('text-[14px]')).toBe(false);
+    expect(isArbitraryColor('text-[1.2rem]')).toBe(false);
   });
 });
 
@@ -123,6 +144,12 @@ describe('matchesAllowlist', () => {
     const allowlist = [/^btn-/g];
     expect(matchesAllowlist('btn-primary', allowlist)).toBe(true);
     expect(matchesAllowlist('btn-secondary', allowlist)).toBe(true);
+  });
+
+  it('matches glob-style wildcards', () => {
+    expect(matchesAllowlist('icon-button', ['icon-*'])).toBe(true);
+    expect(matchesAllowlist('icon-button-large', ['icon-*'])).toBe(true);
+    expect(matchesAllowlist('btn-icon', ['icon-*'])).toBe(false);
   });
 });
 
@@ -216,5 +243,90 @@ describe('isOutlineRemoval', () => {
     expect(isOutlineRemoval('outline-2')).toBe(false);
     expect(isOutlineRemoval('focus:outline-2')).toBe(false);
     expect(isOutlineRemoval('outline')).toBe(false);
+  });
+});
+
+describe('typography arbitrary-value helpers', () => {
+  it('detects hardcoded font sizes', () => {
+    expect(isHardcodedFontSize('text-[14px]')).toBe(true);
+    expect(isHardcodedFontSize('text-[1.2rem]')).toBe(true);
+    expect(isHardcodedFontSize('text-[#333]')).toBe(false);
+    expect(isHardcodedFontSize('text-sm')).toBe(false);
+  });
+
+  it('detects hardcoded line heights', () => {
+    expect(isHardcodedLineHeight('leading-[1.3]')).toBe(true);
+    expect(isHardcodedLineHeight('leading-[20px]')).toBe(true);
+    expect(isHardcodedLineHeight('leading-normal')).toBe(false);
+  });
+
+  it('detects magic letter spacing', () => {
+    expect(isMagicLetterSpacing('tracking-[0.5px]')).toBe(true);
+    expect(isMagicLetterSpacing('tracking-[0.05em]')).toBe(true);
+    expect(isMagicLetterSpacing('tracking-wide')).toBe(false);
+  });
+
+  it('detects non-token font weights', () => {
+    expect(isNonTokenFontWeight('font-[550]')).toBe(true);
+    expect(isNonTokenFontWeight("font-['Inter']")).toBe(false);
+    expect(isNonTokenFontWeight('font-bold')).toBe(false);
+  });
+
+  it('detects custom font families', () => {
+    expect(isCustomFontFamily("font-['Inter']")).toBe(true);
+    expect(isCustomFontFamily('font-[Inter]')).toBe(true);
+    expect(isCustomFontFamily('font-sans')).toBe(false);
+    expect(isCustomFontFamily('font-[550]')).toBe(false);
+  });
+});
+
+describe('motion arbitrary-value helpers', () => {
+  it('detects arbitrary durations', () => {
+    expect(isArbitraryDuration('duration-[250ms]')).toBe(true);
+    expect(isArbitraryDuration('duration-[0.2s]')).toBe(true);
+    expect(isArbitraryDuration('duration-300')).toBe(false);
+    expect(isArbitraryDuration('duration-[]')).toBe(false);
+  });
+
+  it('detects arbitrary easings', () => {
+    expect(isArbitraryEasing('ease-[cubic-bezier(0.4,0,0.2,1)]')).toBe(true);
+    expect(isArbitraryEasing('ease-in-out')).toBe(false);
+    expect(isArbitraryEasing('ease-[]')).toBe(true);
+  });
+
+  it('detects arbitrary transitions', () => {
+    expect(isArbitraryTransition('transition-[color_200ms]')).toBe(true);
+    expect(isArbitraryTransition('transition-colors')).toBe(false);
+    expect(isArbitraryTransition('transition-[]')).toBe(true);
+  });
+
+  it('detects arbitrary animations', () => {
+    expect(isArbitraryAnimation('animate-[spin_1s_linear]')).toBe(true);
+    expect(isArbitraryAnimation('animate-spin')).toBe(false);
+    expect(isArbitraryAnimation('animate-[]')).toBe(true);
+  });
+});
+
+describe('visual effect arbitrary-value helpers', () => {
+  it('detects arbitrary z-index values', () => {
+    expect(isArbitraryZIndex('z-[999]')).toBe(true);
+    expect(isArbitraryZIndex('z-[100]')).toBe(true);
+    expect(isArbitraryZIndex('z-50')).toBe(false);
+    expect(isArbitraryZIndex('z-[]')).toBe(true);
+  });
+
+  it('detects arbitrary shadows', () => {
+    expect(isArbitraryShadow('shadow-[0_4px_12px_rgba(0,0,0,0.1)]')).toBe(true);
+    expect(isArbitraryShadow('drop-shadow-[0_2px_4px_rgba(0,0,0,0.2)]')).toBe(true);
+    expect(isArbitraryShadow('shadow-lg')).toBe(false);
+    expect(isArbitraryShadow('shadow-[]')).toBe(true);
+  });
+
+  it('detects arbitrary border radii', () => {
+    expect(isArbitraryBorderRadius('rounded-[6px]')).toBe(true);
+    expect(isArbitraryBorderRadius('rounded-[50%]')).toBe(true);
+    expect(isArbitraryBorderRadius('rounded-tl-[1rem]')).toBe(true);
+    expect(isArbitraryBorderRadius('rounded-lg')).toBe(false);
+    expect(isArbitraryBorderRadius('rounded-[]')).toBe(true);
   });
 });

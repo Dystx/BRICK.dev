@@ -3,6 +3,11 @@ import { VERSION, type Issue, type ProjectReport, type Severity } from '../types
 interface SarifRule {
   id: string;
   shortDescription: { text: string };
+  properties: {
+    aiSpecific: boolean;
+    category: string;
+    severity: Severity;
+  };
 }
 
 interface SarifResult {
@@ -52,6 +57,11 @@ export function formatSarif(report: ProjectReport): string {
     id: issue.ruleId,
     shortDescription: {
       text: issue.message,
+    },
+    properties: {
+      aiSpecific: issue.aiSpecific,
+      category: issue.category,
+      severity: issue.severity,
     },
   }));
 

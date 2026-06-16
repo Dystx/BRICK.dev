@@ -74,6 +74,23 @@ describe('init command', () => {
     expect(stdout).toContain(`Created ${configPath}`);
   });
 
+  it('appends .slop-audit/ to .gitignore on init', async () => {
+    const gitignorePath = join(dir, '.gitignore');
+    writeFileSync(gitignorePath, 'node_modules/\n');
+    const { exitCode } = await run(['init', '--yes', '--workspace', dir]);
+    expect(exitCode).toBe(0);
+    const gitignore = readFileSync(gitignorePath, 'utf8');
+    expect(gitignore).toContain('.slop-audit/');
+  });
+
+  it('creates .gitignore with .slop-audit/ when none exists', async () => {
+    const gitignorePath = join(dir, '.gitignore');
+    const { exitCode } = await run(['init', '--yes', '--workspace', dir]);
+    expect(exitCode).toBe(0);
+    expect(existsSync(gitignorePath)).toBe(true);
+    expect(readFileSync(gitignorePath, 'utf8')).toContain('.slop-audit/');
+  });
+
   it('creates config and baseline with --yes --baseline', async () => {
     writeGitRepo(dir);
     await execFileAsync('git', ['init'], { cwd: dir });
@@ -701,6 +718,92 @@ describe('--doctor', () => {
       expect(stdout).toContain('All diagnostic checks passed');
       expect(stdout).toContain('Slop Index:');
     });
+  });
+});
+
+describe('--staged without baseline degrade', () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = createTmpDir();
+    mkdirSync(join(dir, 'src'), { recursive: true });
+    writeFileSync(
+      join(dir, 'src', 'Button.tsx'),
+      'export function Button() { return <button>hi</button>; }',
+    );
+
+    const config = {
+      ...DEFAULT_CONFIG,
+      thresholds: { ...DEFAULT_CONFIG.thresholds, meanSlop: 100, individualSlopThreshold: 5 },
+    };
+    writeFileSync(join(dir, 'slop-audit.config.mjs'), serializeConfig(config));
+
+    await execFileAsync('git', ['init'], { cwd: dir });
+    await execFileAsync('git', ['config', 'user.email', 'test@example.com'], { cwd: dir });
+    await execFileAsync('git', ['config', 'user.name', 'Test User'], { cwd: dir });
+    await execFileAsync('git', ['add', '.'], { cwd: dir });
+    await execFileAsync('git', ['commit', '-m', 'initial'], { cwd: dir });
+  });
+
+  afterEach(() => {
+    cleanupTempDir(dir);
+  });
+
+  it('degrades to individual threshold gating when no baseline exists', async () => {
+    writeFileSync(
+      join(dir, 'src', 'Slop.tsx'),
+      `export function Slop() {
+  return (
+    <div>
+      <div className="w-[100px] flex items-center justify-center min-h-screen text-center">one</div>
+      <div className="h-[50px] flex items-center justify-center min-h-screen text-center">two</div>
+    </div>
+  );
+}
+`,
+    );
+    await execFileAsync('git', ['add', 'src/Slop.tsx'], { cwd: dir });
+
+    const { exitCode, stderr } = await run(['--staged', '--workspace', dir]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain('exceed individual slop threshold');
+  });
+});
+
+describe('--tighten baseline persistence', () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = createTmpDir();
+    writeGitRepo(dir);
+    await execFileAsync('git', ['init'], { cwd: dir });
+    await execFileAsync('git', ['config', 'user.email', 'test@example.com'], { cwd: dir });
+    await execFileAsync('git', ['config', 'user.name', 'Test User'], { cwd: dir });
+    await execFileAsync('git', ['add', '.'], { cwd: dir });
+    await execFileAsync('git', ['commit', '-m', 'initial'], { cwd: dir });
+  });
+
+  afterEach(() => {
+    cleanupTempDir(dir);
+  });
+
+  it('persists tightened baseline scores to disk', async () => {
+    const { exitCode: initExit } = await run(['init', '--yes', '--baseline', '--workspace', dir]);
+    expect(initExit).toBe(0);
+
+    const baselinePath = join(dir, '.slop-audit', 'cache', 'baseline.json');
+    const baselineBefore = JSON.parse(readFileSync(baselinePath, 'utf8')) as BaselineCache;
+    expect(baselineBefore.baseline_revision).toBe(1);
+
+    const { exitCode: tightenExit } = await run(['--tighten', '--workspace', dir, '--format', 'json']);
+    expect(tightenExit).toBe(0);
+
+    const baselineAfter = JSON.parse(readFileSync(baselinePath, 'utf8')) as BaselineCache;
+    expect(baselineAfter.baseline_revision).toBe(2);
+    const key = Object.keys(baselineAfter.scores)[0];
+    expect(baselineAfter.scores[key].baselineScore).toBeLessThan(
+      baselineBefore.scores[key].baselineScore + 0.001,
+    );
   });
 });
 

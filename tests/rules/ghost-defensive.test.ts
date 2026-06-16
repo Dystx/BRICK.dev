@@ -82,6 +82,16 @@ export function Box() {
     expect(issues).toHaveLength(0);
   });
 
+  it('does not flag a non-member && chain', async () => {
+    const source = `
+export function Box() {
+  return a && b && c ? <div>yes</div> : null;
+}
+`;
+    const issues = await runRule(source, makeConfig());
+    expect(issues).toHaveLength(0);
+  });
+
   it('flags multiple independent deep chains', async () => {
     const source = `
 export function Box() {

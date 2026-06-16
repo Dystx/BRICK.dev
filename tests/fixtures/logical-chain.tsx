@@ -1,3 +1,3 @@
 export function Conditional() {
-  return a && b && c && d ? <div>yes</div> : null;
+  return res && res.data && res.data.user ? <div>yes</div> : null;
 }

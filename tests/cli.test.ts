@@ -40,6 +40,7 @@ const makeReport = (
   categoryScores: {
     visual: 0,
     typo: 0,
+    motion: 0,
     wcag: 0,
     layout: 0,
     component: 0,

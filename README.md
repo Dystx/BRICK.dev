@@ -8,7 +8,7 @@ It answers one question brutally well:
 
 > **Is this frontend built with tokens, semantics, and components, or hacked together with magic values and divs?**
 
-[![AI-Slop: badge me](https://img.shields.io/badge/AI--Slop-audit%20me-6366f1)](https://slop-audit.dev)
+[![Slop Index](https://img.shields.io/badge/slop--index-audit%20me-6366f1)](https://github.com/brickdotdev/slop-audit)
 
 ---
 
@@ -33,147 +33,144 @@ pnpm add -D slop-audit
 Scan the current directory:
 
 ```bash
-npx slop-audit .
+npx slop-audit
 ```
 
-On first run, `slop-audit` auto-detects your framework, styling solution, and base spacing grid. If no `.slop-audit.json` exists, run the calibration wizard first.
+Scan specific paths:
+
+```bash
+npx slop-audit src app
+```
+
+`slop-audit` auto-detects your framework when possible. For a repeatable setup, create a config file first.
 
 ---
 
-## Calibration
+## Initialize a project
 
-Generate a project-specific config with an interactive wizard:
+Create `slop-audit.config.mjs` with the default configuration:
 
 ```bash
-npx slop-audit --init
+npx slop-audit init
 ```
 
-The wizard asks about:
+Overwrite an existing config:
 
-- Framework (React, Vue, Svelte, Solid)
-- Styling solution (Tailwind, CSS Modules, styled-components, Emotion, plain CSS)
-- UI library / design system (shadcn/ui, MUI, Ant Design, Chakra, Radix, custom, none)
-- Base spacing grid (4px, 8px, 5px, custom)
-- Type scale ratio
-- Arbitrary value tolerance (`strict`, `balanced`, `permissive`)
-- Paths to scan
-- Strictness level (`brutal`, `balanced`, `gentle`)
+```bash
+npx slop-audit init --yes
+```
 
-Auto-detected values are shown as defaults and can be overridden.
+Save an initial baseline at the same time:
+
+```bash
+npx slop-audit init --baseline
+```
 
 ---
 
 ## Configuration reference
 
-`.slop-audit.json` lives at the root of the project being scanned.
+`slop-audit.config.mjs` lives at the root of the project being scanned. `.cjs` and `.js` are also supported.
 
-```json
-{
-  "framework": "react",
-  "styling": "tailwind",
-  "uiLibrary": "shadcn/ui",
-  "baseSpacing": 4,
-  "typeScaleRatio": 1.2,
-  "arbitraryTolerance": "balanced",
-  "strictness": "balanced",
-  "include": ["src/**/*", "app/**/*", "pages/**/*", "components/**/*"],
-  "exclude": [
-    "**/node_modules/**",
-    "**/*.test.{ts,tsx,js,jsx}",
-    "**/*.stories.{ts,tsx}",
-    "**/.next/**",
-    "**/dist/**",
-    "**/build/**",
-    "**/coverage/**"
+```js
+export default {
+  framework: 'react',
+  include: ['src/**/*.{ts,tsx,js,jsx}'],
+  exclude: [
+    '**/node_modules/**',
+    '**/.next/**',
+    '**/dist/**',
   ],
-  "legacyPaths": ["src/legacy/**"],
-  "allowedArbitraryPaths": ["app/(marketing)/**"],
-  "componentRegistry": {
-    "button": ["Button"],
-    "input": ["Input"],
-    "dialog": ["Dialog", "Modal"],
-    "card": ["Card"],
-    "select": ["Select"],
-    "badge": ["Badge"]
+  rules: {
+    'visual/arbitrary-escape': 'medium',
+    'visual/generic-centering': 'low',
+    'logic/boundary-violation': 'high',
+    'logic/zombie-state': 'medium',
+    'logic/ghost-defensive': 'medium',
+    'wcag/target-size': 'high',
+    'wcag/focus-appearance': 'high',
   },
-  "disabledRules": [],
-  "bannedDefaults": true,
-  "projectMemory": true,
-  "categoryThresholds": {
-    "visual": 0.35,
-    "typography": 0.35,
-    "spacing": 0.35,
-    "component": 0.35,
-    "logic": 0.5,
-    "architecture": 0.5
+  thresholds: {
+    meanSlop: 25,
+    p90Slop: 50,
+    individualSlopThreshold: 50,
   },
-  "rules": {
-    "maxUseEffectPerComponent": 3,
-    "maxComponentLines": 500,
-    "maxJsxNestingDepth": 6,
-    "maxDirectChildren": 10,
-    "maxProps": 10,
-    "contrastMethod": "wcag2",
-    "contrastTarget": 4.5
-  }
-}
+  arbitraryValueAllowlist: [
+    'w-full',
+    /^w-\[calc\(.*\)\]$/,
+    'top-[var(--header-height)]',
+  ],
+};
 ```
 
 ### Key options
 
 | Option | Description |
 |--------|-------------|
-| `framework` | Target framework: `react`, `vue`, `svelte`, `solid` |
-| `styling` | Primary styling system: `tailwind`, `css-modules`, `styled-components`, `emotion`, `plain` |
-| `uiLibrary` | Design system in use, e.g. `shadcn/ui`, `mui`, `antd`, `chakra`, `radix` |
-| `baseSpacing` | Base spacing grid in pixels (e.g. `4`) |
-| `typeScaleRatio` | Target modular type scale ratio (e.g. `1.2`) |
-| `arbitraryTolerance` | How hard to flag arbitrary Tailwind values: `strict`, `balanced`, `permissive` |
-| `strictness` | Overall scoring multiplier: `brutal`, `balanced`, `gentle` |
-| `legacyPaths` | Paths where issues score lower because the code is old |
-| `allowedArbitraryPaths` | Paths where arbitrary values are acceptable, e.g. marketing pages |
-| `componentRegistry` | Map primitive names to your component names |
-| `disabledRules` | Rule IDs to skip |
-| `bannedDefaults` | Enable the built-in banned-defaults rule set |
-| `projectMemory` | Store run history for trend tracking |
+| `framework` | Target framework multiplier, e.g. `react`, `vue`, `svelte`, `solid` |
+| `include` | Glob patterns for files to scan |
+| `exclude` | Glob patterns for files to ignore |
+| `rules` | Per-rule severity override: `low`, `medium`, `high`, or `off` |
+| `frameworkMultipliers` | Multipliers applied per framework |
+| `ruleConfig` | Rule-specific numeric options |
+| `contextTaxCaps` | Saturation caps for clean/standard contexts |
+| `thresholds` | Gate thresholds for `meanSlop`, `p90Slop`, and `individualSlopThreshold` |
+| `arbitraryValueAllowlist` | Class-name strings or regexes that are allowed as arbitrary values |
+| `wcag.targetSizeExemptSelectors` | CSS selectors exempt from target-size checks |
 
 ---
 
-## CLI flags reference
+## CLI reference
 
 ```text
-Usage: slop-audit [options] [path]
+Usage: slop-audit [options] [command]
 
-Options:
-  -V, --version                output the version number
-  --init                       run calibration wizard
-  --json [path]                write JSON report (default: ./slop-audit-report.json; use - for stdout)
-  --badge                      output README badge markdown
-  --ai-autopsy                 show AI failure-mode breakdown
-  -q, --quiet                  suppress advice and footer links
-  -s, --strict                 exit with code 2 if any critical or high issue is found
-  --config <path>              path to .slop-audit.json
-  --include <glob>             include pattern (repeatable)
-  --exclude <glob>             exclude pattern (repeatable)
-  --strictness <level>         brutal | balanced | gentle
-  --no-increase                fail if Slop Index increased vs. previous run
-  --trend [n]                  print sparkline of last n runs (default: 20)
-  --no-cache                   disable incremental token cache
-  --since <ref>                only scan files changed since git ref
-  -h, --help                   display help for command
+Global options:
+  -V, --version                         output the version number
+  --framework <name>                    framework multiplier to apply
+  --ai-only                             only report AI-specific issues
+  --human-only                          only report human-facing issues
+  --ignore-wcag22                       ignore WCAG 2.2 related issues
+  --format <pretty|json|sarif>          output format (default: pretty)
+  --threads <n>                         number of worker threads
+  --since <ref>                         only scan files changed since git ref
+  --workspace <path>                    workspace/project path (default: cwd)
+  --tighten                             tighten baseline allowances
+  --fix                                 apply auto-fixes
+  --doctor                              run diagnostics
+  --watch                               watch files and re-run (not implemented)
+  --suggest                             print remediation advice
+  --heatmap                             output migration ROI heatmap
+  --quiet                               suppress non-error output
+  --json [path]                         write JSON report to path or stdout
+  --staged                              scan only staged files
+  --cache                               enable baseline caching (default: true)
+  --no-cache                            disable baseline caching
+  -h, --help                            display help for command
+
+Subcommands:
+  init [options]                        create a slop-audit config file
+    --baseline                          run an initial scan and save a baseline
+    --yes                               overwrite existing config
+  install                               install the git pre-commit hook
+  uninstall                             uninstall the git pre-commit hook
+  badge                                 print a shields.io slop-index badge
+  suggest                               print remediation advice
+  scan [paths...]                       scan files for slop (default command)
 ```
 
-Default path is the current working directory.
+The default command is `scan`. Running `npx slop-audit` with no subcommand scans the current directory.
 
 ### Exit codes
 
 | Code | Meaning |
 |------|---------|
-| `0` | No issues found and no score regression |
-| `1` | Issues found (warnings or below-threshold slop) |
-| `2` | Critical/high issues with `--strict`, score increased with `--no-increase`, or scan error |
+| `0` | Passed: below thresholds or no staged gating failure |
+| `1` | Thresholds exceeded or staged gating failure |
+| `2` | Config, git, hook, or user error |
+| `3` | Unexpected error |
 
-Use `--strict` as a CI gate. Combine with `--strictness=brutal` for maximum pain.
+Use `--staged` as a pre-commit gate. Combine with `--tighten` to ratchet baselines down over time.
 
 ---
 
@@ -181,27 +178,36 @@ Use `--strict` as a CI gate. Combine with `--strictness=brutal` for maximum pain
 
 ```text
 $ npx slop-audit .
-AI-Slop Index: 73% [████████████████░░░░]
+Slop Index: 73 | Assembly Health: 27
+(0-100, higher = better, inverse of Slop Index)
 
-Visual:       81%  ████████████████░░░░
-Typography:   60%  ████████████░░░░░░░░
-Spacing:      45%  █████████░░░░░░░░░░░
-Components:   62%  ████████████░░░░░░░░
-Logic:        54%  ███████████░░░░░░░░░
-Architecture: 30%  ██████░░░░░░░░░░░░░░
+Category breakdown
+  Visual            81.0
+  Typography        60.0
+  Spacing           45.0
+  Component         62.0
+  Logic             54.0
+  Architecture      30.0
 
-Top offenses:
-  • 14 arbitrary Tailwind values off the 4px grid (high)
-  • 3 ghost useEffect calls setting state on mount (high)
-  • 2 <div> elements acting as buttons (high)
-  • Heading hierarchy inverted on /pricing (medium)
+Top offending components
+   95.0  src/legacy/Modal.tsx
+   88.0  app/(marketing)/page.tsx
+   71.0  src/components/Button.tsx
 
-Advice:
-  1. Replace w-[800px] h-[600px] with a container + aspect ratio.
-  2. Move fetch logic to a data library; delete 3 useEffects.
-  3. Use <Button> from your design system instead of <div onClick>.
+Issues (4)
+[HIGH  ] visual/arbitrary-escape · src/legacy/Modal.tsx:14:8
+  Avoid arbitrary Tailwind values outside the design token grid.
+  → Replace w-[800px] h-[600px] with a container + aspect ratio.
+[HIGH  ] logic/zombie-state · src/components/Form.tsx:42:3
+  State is initialized but never updated or read.
+  → Remove the unused state or wire it up.
+[HIGH  ] wcag/target-size · app/pricing/page.tsx:28:5
+  Interactive element is smaller than the WCAG 2.2 minimum target size.
+  → Increase the hit area to at least 24×24 CSS pixels.
+[MEDIUM] visual/generic-centering · src/components/Hero.tsx:9:5
+  Generic centering pattern detected.
+  → Use a layout primitive from your design system.
 
-Get a deeper analysis: https://slop-audit.dev
 Need a rescue? https://brick.dev/rescue
 ```
 
@@ -212,29 +218,22 @@ Need a rescue? https://brick.dev/rescue
 Add a Slop Index badge to your README:
 
 ```bash
-npx slop-audit --badge
+npx slop-audit badge
 ```
 
 Output:
 
 ```markdown
-[AI-Slop: 73%](https://slop-audit.dev)
-```
-
-Render it as a badge with shields.io:
-
-```markdown
-[![AI-Slop: 73%](https://img.shields.io/badge/AI--Slop-73%25-orange)](https://slop-audit.dev)
+[![Slop Index](https://img.shields.io/badge/slop--index-73-red)](https://github.com/brickdotdev/slop-audit)
 ```
 
 Badge color thresholds:
 
 | Score | Color |
 |-------|-------|
-| 0–20  | green |
-| 21–50 | yellow |
-| 51–80 | orange |
-| 81–100 | red |
+| 0–24  | green |
+| 25–49 | yellow |
+| 50+   | red |
 
 ---
 

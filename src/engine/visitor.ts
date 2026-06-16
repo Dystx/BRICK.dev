@@ -188,17 +188,66 @@ function sourceText(node: AnyNode, source: string): string {
   return source.slice(Math.max(0, start - 1), Math.max(0, end - 1));
 }
 
-function binaryAndChainLength(node: AnyNode): number {
+function collectChainText(node: AnyNode, source: string): string {
+  return sourceText(node, source);
+}
+
+function andChainOperands(node: AnyNode): AnyNode[] {
   if (!isObject(node) || node.type !== 'BinaryExpression' || node.operator !== '&&') {
-    return 1;
+    return [node];
   }
   const left = node.left as AnyNode;
   const right = node.right as AnyNode;
-  return binaryAndChainLength(left) + binaryAndChainLength(right);
+  return [...andChainOperands(left), right];
 }
 
-function collectChainText(node: AnyNode, source: string): string {
-  return sourceText(node, source);
+function memberExpressionDepth(node: AnyNode): number {
+  if (!isObject(node)) return -1;
+  if (node.type === 'Identifier' && typeof node.value === 'string') {
+    return 0;
+  }
+  if (node.type === 'MemberExpression' || node.type === 'OptionalMemberExpression') {
+    const object = node.object as AnyNode;
+    const depth = memberExpressionDepth(object);
+    return depth >= 0 ? depth + 1 : -1;
+  }
+  return -1;
+}
+
+function rootIdentifierName(node: AnyNode): string | undefined {
+  if (!isObject(node)) return undefined;
+  if (node.type === 'Identifier' && typeof node.value === 'string') {
+    return node.value as string;
+  }
+  if (node.type === 'MemberExpression' || node.type === 'OptionalMemberExpression') {
+    return rootIdentifierName(node.object as AnyNode);
+  }
+  return undefined;
+}
+
+function defensiveMemberChainDepth(node: AnyNode): number | undefined {
+  if (!isObject(node) || node.type !== 'BinaryExpression' || node.operator !== '&&') {
+    return undefined;
+  }
+  const operands = andChainOperands(node);
+  if (operands.length < 3) return undefined;
+
+  let baseName: string | undefined;
+  let previousDepth = -1;
+  for (const operand of operands) {
+    const root = rootIdentifierName(operand);
+    const depth = memberExpressionDepth(operand);
+    if (root === undefined || depth < 0) return undefined;
+    if (baseName === undefined) {
+      baseName = root;
+    } else if (root !== baseName) {
+      return undefined;
+    }
+    if (depth < previousDepth) return undefined;
+    previousDepth = depth;
+  }
+
+  return operands.length;
 }
 
 function isUseStateDeclarator(node: Record<string, unknown>): boolean {
@@ -258,6 +307,7 @@ export function extractFacts(filePath: string, ast: Module, nodeCount: number): 
     astNodeCount: nodeCount,
     components: [],
     staticClassNames: [],
+    styleProps: [],
     interactiveElements: [],
     hooks: [],
     logicalExpressions: [],
@@ -337,6 +387,7 @@ export function extractFacts(filePath: string, ast: Module, nodeCount: number): 
       isServerComponent: !ctx.useClient,
       hookCalls: [],
       stateBindings: [],
+      headings: [],
       isComponent: containsJsx(node),
       bindings,
     });
@@ -471,15 +522,66 @@ export function extractFacts(filePath: string, ast: Module, nodeCount: number): 
           facts.staticClassNames.push({ value: classValue, line, column });
         }
       }
+      if (attrName === 'style') {
+        const raw = node.value as AnyNode;
+        const valueNode = unwrapJsxExpression(raw);
+        if (isObject(valueNode) && valueNode.type === 'ObjectExpression') {
+          const { line, column } = positionFrom(node, lineOffsets);
+          facts.styleProps.push({ source: sourceText(valueNode, source), line, column });
+        }
+      }
     }
 
-    // Detect interactive elements.
+    // Detect heading elements and attach them to the nearest component.
     if (type === 'JSXOpeningElement') {
       const tag = jsxElementName(node);
-      if (tag === 'button' || tag === 'a' || tag === 'input') {
+      if (tag && /^h[1-6]$/.test(tag)) {
+        const headingClassNames: ClassNameFact[] = [];
+        let headingStyleSource: string | undefined;
+        const attrs = node.attributes as AnyNode[];
+        for (const attr of attrs) {
+          if (!isObject(attr) || attr.type !== 'JSXAttribute') continue;
+          const name = jsxAttrName(attr);
+          if (!name) continue;
+          const raw = attr.value as AnyNode;
+          const valueNode = unwrapJsxExpression(raw);
+          if (name === 'className' || name === 'class') {
+            const classValue = staticClassValue(valueNode);
+            if (classValue !== undefined) {
+              const { line: cl, column: cc } = positionFrom(attr, lineOffsets);
+              headingClassNames.push({ value: classValue, line: cl, column: cc });
+            }
+          }
+          if (name === 'style' && isObject(valueNode) && valueNode.type === 'ObjectExpression') {
+            headingStyleSource = sourceText(valueNode, source);
+          }
+        }
+        const { line: hl, column: hc } = positionFrom(node, lineOffsets);
+        const heading = {
+          level: parseInt(tag[1], 10),
+          classNames: headingClassNames,
+          styleSource: headingStyleSource,
+          line: hl,
+          column: hc,
+        };
+        const component = nearestComponent();
+        if (component) {
+          component.headings.push(heading);
+        }
+      }
+    }
+
+    // Detect interactive elements (native or custom via onClick).
+    if (type === 'JSXOpeningElement') {
+      const tag = jsxElementName(node);
+      const attrs = node.attributes as AnyNode[];
+      const hasOnClick = attrs.some(
+        (attr) =>
+          isObject(attr) && attr.type === 'JSXAttribute' && jsxAttrName(attr) === 'onClick',
+      );
+      if (tag === 'button' || tag === 'a' || tag === 'input' || hasOnClick) {
         const attributes: Record<string, string | undefined> = {};
         const classNames: ClassNameFact[] = [];
-        const attrs = node.attributes as AnyNode[];
         for (const attr of attrs) {
           if (!isObject(attr) || attr.type !== 'JSXAttribute') continue;
           const name = jsxAttrName(attr);
@@ -501,10 +603,10 @@ export function extractFacts(filePath: string, ast: Module, nodeCount: number): 
       }
     }
 
-    // Detect deep && binary expression chains.
+    // Detect deep defensive && chains over nested member properties.
     if (type === 'BinaryExpression' && node.operator === '&&' && !isAndChainChild(parent)) {
-      const depth = binaryAndChainLength(node);
-      if (depth >= 3) {
+      const depth = defensiveMemberChainDepth(node);
+      if (depth !== undefined && depth >= 3) {
         const { line, column } = positionFrom(node, lineOffsets);
         facts.logicalExpressions.push({
           depth,

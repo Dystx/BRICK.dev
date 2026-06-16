@@ -77,6 +77,24 @@ describe('wcag/target-size', () => {
     expect(issues).toHaveLength(0);
   });
 
+  it('supports regex exempt selectors', async () => {
+    const source = `export function Form() { return <button className="icon-button-large" />; }`;
+    const issues = await runRule(
+      source,
+      makeConfig({ wcag: { targetSizeExemptSelectors: [/^icon-button/] } }),
+    );
+    expect(issues).toHaveLength(0);
+  });
+
+  it('supports glob-style exempt selectors', async () => {
+    const source = `export function Form() { return <button className="icon-button-large" />; }`;
+    const issues = await runRule(
+      source,
+      makeConfig({ wcag: { targetSizeExemptSelectors: ['icon-*'] } }),
+    );
+    expect(issues).toHaveLength(0);
+  });
+
   it('flags <a className="text-sm" />', async () => {
     const source = `export function Form() { return <a className="text-sm" />; }`;
     const issues = await runRule(source, makeConfig());

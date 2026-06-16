@@ -86,7 +86,7 @@ Create `src/rules/logic/boundary-violation.ts`:
 - AI-specific: true
 - Trigger: component has `isServerComponent === true` and any hook call (`useState`, `useEffect`, `useContext`).
 - Output one issue per violating component.
-- `--fix`: not implemented yet (Phase 5).
+- `--fix`: implemented in `src/fix/use-client.ts`; inserts `"use client"` directive at the top of the file when boundary-violation issues are found.
 
 Create `tests/rules/boundary-violation.test.ts`.
 

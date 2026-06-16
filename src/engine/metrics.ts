@@ -147,6 +147,7 @@ export function aggregateReport(
   const categoryContributions: Record<Category, number> = {
     visual: 0,
     typo: 0,
+    motion: 0,
     wcag: 0,
     layout: 0,
     component: 0,

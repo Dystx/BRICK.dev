@@ -10,10 +10,10 @@ interface HeatmapRow {
   roi: number;
 }
 
-function computeRoi(stats?: GitFileStats): Pick<HeatmapRow, 'recencyWeight' | 'churnWeight' | 'roi'> {
+function computeRoi(score: number, stats?: GitFileStats): Pick<HeatmapRow, 'recencyWeight' | 'churnWeight' | 'roi'> {
   const recencyWeight = stats?.recent ? 1.5 : 1.0;
   const churnWeight = 1 + Math.min((stats?.editCount ?? 0) / 10, 1.0);
-  const roi = recencyWeight * churnWeight;
+  const roi = score * recencyWeight * churnWeight;
 
   return {
     recencyWeight,
@@ -28,13 +28,13 @@ export function formatHeatmap(
 ): string {
   const rows: HeatmapRow[] = report.components
     .map((component) => {
-      const weights = computeRoi(stats[component.filePath]);
+      const weights = computeRoi(component.adjustedScore, stats[component.filePath]);
       return {
         filePath: component.filePath,
         adjustedScore: component.adjustedScore,
         recencyWeight: weights.recencyWeight,
         churnWeight: weights.churnWeight,
-        roi: component.adjustedScore * weights.roi,
+        roi: weights.roi,
       };
     })
     .sort((a, b) => b.roi - a.roi);

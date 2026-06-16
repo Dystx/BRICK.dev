@@ -11,6 +11,7 @@ function makeReport(): ProjectReport {
     categoryScores: {
       visual: 12.5,
       typo: 8.0,
+      motion: 0,
       wcag: 15.2,
       layout: 3.1,
       component: 9.9,

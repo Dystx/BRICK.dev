@@ -78,7 +78,14 @@ export function applyFixes(issues: Issue[]): FixResult[] {
         }
 
         if (modified !== source) {
-          writeFileSync(filePath, modified);
+          try {
+            writeFileSync(filePath, modified);
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            for (const app of applied.splice(0, applied.length)) {
+              skipped.push({ ...app, reason: `Could not write source file: ${message}` });
+            }
+          }
         }
       }
     }

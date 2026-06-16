@@ -157,6 +157,22 @@ describe('extractFacts', () => {
     expect(binding.setterReferenced).toBe(false);
   });
 
+  it('collects heading tags with class names inside components', async () => {
+    const { ast, nodeCount } = await parseFile(fixture('heading'));
+    const facts = extractFacts(fixture('heading'), ast, nodeCount);
+    expect(facts.components).toHaveLength(1);
+    expect(facts.components[0].headings).toHaveLength(1);
+    expect(facts.components[0].headings[0].level).toBe(1);
+    expect(facts.components[0].headings[0].classNames[0].value).toBe('text-2xl');
+  });
+
+  it('collects custom interactive elements with onClick', async () => {
+    const { ast, nodeCount } = await parseFile(fixture('custom-interactive'));
+    const facts = extractFacts(fixture('custom-interactive'), ast, nodeCount);
+    const div = facts.interactiveElements.find((e) => e.tag === 'div');
+    expect(div).toBeDefined();
+  });
+
   it('tracks multiple useState bindings independently', async () => {
     const { ast, nodeCount } = await parseFile(fixture('state-multiple'));
     const facts = extractFacts(fixture('state-multiple'), ast, nodeCount);

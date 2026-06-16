@@ -28,6 +28,7 @@ function makeFacts(): ScanFacts {
     astNodeCount: 0,
     components: [],
     staticClassNames: [],
+    styleProps: [],
     interactiveElements: [],
     hooks: [],
     logicalExpressions: [],

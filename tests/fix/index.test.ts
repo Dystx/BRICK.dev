@@ -5,7 +5,7 @@ import { applyFixes, applyLayoutTokenFix, applyUseClientFix } from '../../src/fi
 import { applyFocusRingFix } from '../../src/fix/focus-ring';
 import { nearestSpacingToken } from '../../src/rules/utils';
 import { serializeConfig, DEFAULT_CONFIG } from '../../src/index';
-import type { Issue, ResolvedConfig } from '../../src/types';
+import type { Issue } from '../../src/types';
 import {
   assertDistBuilt,
   cleanupTempDir,
@@ -25,25 +25,6 @@ function makeIssue(overrides: Partial<Issue> & Pick<Issue, 'ruleId' | 'line' | '
   };
 }
 
-function makeConfig(overrides?: Partial<ResolvedConfig>): ResolvedConfig {
-  return {
-    include: [],
-    exclude: [],
-    rules: {},
-    frameworkMultipliers: {},
-    ruleConfig: {},
-    contextTaxCaps: { cleanCap: 0, standardCap: 0 },
-    arbitraryValueAllowlist: [],
-    wcag: { targetSizeExemptSelectors: [] },
-    thresholds: {
-      meanSlop: 0,
-      p90Slop: 0,
-      individualSlopThreshold: 0,
-    },
-    ...overrides,
-  };
-}
-
 describe('applyUseClientFix', () => {
   it('inserts "use client" at the top of a file', () => {
     const source = `export function Page() {
@@ -53,7 +34,7 @@ describe('applyUseClientFix', () => {
 `;
     const result = applyUseClientFix(source, makeIssue({ ruleId: 'logic/boundary-violation', line: 1, column: 1 }));
     expect(result.applied).toBe(true);
-    expect(result.source.startsWith('"use client";\n')).toBe(true);
+    expect(result.source.startsWith('"use client"; // @slop-audit:v1.0.0:fix:use-client\n')).toBe(true);
     expect(result.source).toContain('export function Page()');
   });
 
@@ -73,6 +54,14 @@ export function Page() { return <div />; }
     const result = applyUseClientFix(source, makeIssue({ ruleId: 'logic/boundary-violation', line: 2, column: 1 }));
     expect(result.applied).toBe(false);
     expect(result.reason).toContain('already present');
+  });
+
+  it('is idempotent when the fix anchor already exists', () => {
+    const source = `"use client"; // @slop-audit:v1.0.0:fix:use-client\nexport function Page() { return <div />; }
+`;
+    const result = applyUseClientFix(source, makeIssue({ ruleId: 'logic/boundary-violation', line: 2, column: 1 }));
+    expect(result.applied).toBe(false);
+    expect(result.reason).toContain('anchor already present');
   });
 });
 
@@ -258,7 +247,7 @@ describe('applyFixes orchestrator', () => {
       expect(results[0].applied).toHaveLength(1);
       expect(results[0].skipped).toHaveLength(0);
       const content = readFileSync(filePath, 'utf-8');
-      expect(content.startsWith('"use client";\n')).toBe(true);
+      expect(content.startsWith('"use client"; // @slop-audit:v1.0.0:fix:use-client\n')).toBe(true);
     } finally {
       cleanupTempDir(dir);
     }

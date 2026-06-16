@@ -5,6 +5,7 @@ export type Severity = 'low' | 'medium' | 'high';
 export type Category =
   | 'visual'
   | 'typo'
+  | 'motion'
   | 'wcag'
   | 'layout'
   | 'component'
@@ -83,6 +84,7 @@ export interface ComponentFacts {
   isServerComponent: boolean;
   hookCalls: HookFact[];
   stateBindings: StateBinding[];
+  headings: HeadingFact[];
 }
 
 export interface LogicalExpressionFact {
@@ -92,11 +94,26 @@ export interface LogicalExpressionFact {
   text: string;
 }
 
+export interface StylePropFact {
+  source: string;
+  line: number;
+  column: number;
+}
+
+export interface HeadingFact {
+  level: number;
+  classNames: ClassNameFact[];
+  styleSource?: string;
+  line: number;
+  column: number;
+}
+
 export interface ScanFacts {
   filePath: string;
   astNodeCount: number;
   components: ComponentFacts[];
   staticClassNames: ClassNameFact[];
+  styleProps: StylePropFact[];
   interactiveElements: ElementFact[];
   hooks: HookFact[];
   logicalExpressions: LogicalExpressionFact[];
@@ -179,7 +196,22 @@ export interface ResolvedConfig {
     individualSlopThreshold: number;
   };
   arbitraryValueAllowlist: (string | RegExp)[];
+  gapTokens?: string[];
   wcag: {
-    targetSizeExemptSelectors: string[];
+    targetSizeExemptSelectors: (string | RegExp)[];
   };
+  // Calibration wizard fields
+  styling?: string;
+  uiLibrary?: string;
+  baseSpacing?: number;
+  typeScaleRatio?: number;
+  arbitraryTolerance?: 'strict' | 'balanced' | 'permissive';
+  strictness?: 'brutal' | 'balanced' | 'gentle';
+  legacyPaths?: string[];
+  allowedArbitraryPaths?: string[];
+  componentRegistry?: Record<string, string[]>;
+  disabledRules?: string[];
+  bannedDefaults?: boolean;
+  projectMemory?: boolean;
+  categoryThresholds?: Record<string, number>;
 }

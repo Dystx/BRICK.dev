@@ -12,6 +12,7 @@ function makeReport(): ProjectReport {
     categoryScores: {
       visual: 12.5,
       typo: 8.0,
+      motion: 0,
       wcag: 15.2,
       layout: 3.1,
       component: 9.9,
@@ -128,6 +129,22 @@ describe('formatSarif', () => {
 
     const zombie = rules.find((r: { id: string }) => r.id === 'zombie-state');
     expect(zombie.shortDescription.text).toBe('Unused state setter detected');
+  });
+
+  it('includes rule property bags with aiSpecific, category, and severity', () => {
+    const output = formatSarif(makeReport());
+    const parsed = JSON.parse(output);
+    const rules = parsed.runs[0].tool.driver.rules;
+
+    const magic = rules.find((r: { id: string }) => r.id === 'magic-spacing');
+    expect(magic.properties.aiSpecific).toBe(false);
+    expect(magic.properties.category).toBe('layout');
+    expect(magic.properties.severity).toBe('medium');
+
+    const zombie = rules.find((r: { id: string }) => r.id === 'zombie-state');
+    expect(zombie.properties.aiSpecific).toBe(true);
+    expect(zombie.properties.category).toBe('logic');
+    expect(zombie.properties.severity).toBe('high');
   });
 
   it('formats with 2-space indentation', () => {

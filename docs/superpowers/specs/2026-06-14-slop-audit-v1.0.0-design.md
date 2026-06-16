@@ -80,7 +80,14 @@ BRICK/
 │   └── perf/
 │       └── large-codebase.ts   # Synthetic 2,000-component benchmark
 ├── scripts/
-│   └── generate-perf-fixtures.ts
+│   └── generate-corpus.ts        # baseline corpus generator
+├── tests/
+│   ├── fixtures/
+│   ├── rules/
+│   ├── integration/
+│   └── perf/
+│       ├── large-codebase.ts     # standalone benchmark
+│       └── large-codebase.test.ts
 ├── .github/
 │   └── workflows/
 │       └── slop-audit.yml
@@ -436,20 +443,21 @@ export class RuleRegistry {
 | `--fix` | Execute safe fixes. |
 | `--suggest` | Output remediation tiers. |
 | `--yes` | Skip prompts. |
-| `--doctor` | Validate environment, parser bindings, baseline freshness. |
-| `--watch` | Persistent watcher (basic P0 skeleton). |
+| `--doctor` | Validate environment, parser bindings, baseline freshness. (P0 skeleton: runs diagnostics when provided.) |
+| `--watch` | Persistent watcher. (P0 skeleton: prints warning and exits cleanly.) |
 | `--format <pretty\|json\|sarif>` | Output format. |
-| `--cache` | Enable AST result cache (P0: baseline only; full AST cache optional). |
 | `--threads <n>` | Worker count. |
 | `--quiet` | Suppress non-essential output. |
 | `--json [path]` | JSON report file or stdout. |
+| `--staged` | Scan only staged files (pre-commit gating). |
+| `--cache` / `--no-cache` | Enable or disable baseline cache (default: enabled). |
 
 ### Exit Codes
 
-- `0` — success, thresholds passed.
-- `1` — success, thresholds exceeded.
-- `2` — config/cache/hook error.
-- `3` — environment error (missing parser bindings, permissions).
+- `0` — scan completed, thresholds passed.
+- `1` — thresholds exceeded, staged gating failed, or `--fix` could not resolve all issues.
+- `2` — config, cache, git, hook, or user error.
+- `3` — unexpected runtime error.
 
 ---
 
@@ -551,12 +559,10 @@ Each fix writes a versioned anchor comment when modifying shared files.
 
 ### Performance Test (`tests/perf/large-codebase.ts`)
 
-- `scripts/generate-perf-fixtures.ts` creates 2,000 components:
-  - 60%: 50-100 AST nodes
-  - 30%: 100-500 AST nodes
-  - 10%: 500-1000 AST nodes
-- Benchmark runs scan and asserts total wall time < 8s.
-- Subtract bootstrap time when reporting in `--doctor`.
+- Inline fixture generation creates ~1,700 components across 150 files.
+- Benchmark runs a full `scanProject` and asserts total wall time is within `SLOP_AUDIT_PERF_BUDGET_MS` (default 10,000ms).
+- Cleanup removes the temporary fixture directory after each run.
+- Run with `pnpm test:perf` or `pnpm test tests/perf/large-codebase.test.ts`.
 
 ---
 

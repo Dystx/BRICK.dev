@@ -4,6 +4,7 @@ import type { Category, ComponentScore, Issue, ProjectReport, Severity } from '.
 const categoryLabels: Record<Category, string> = {
   visual: 'Visual',
   typo: 'Typography',
+  motion: 'Motion',
   wcag: 'Accessibility',
   layout: 'Layout',
   component: 'Component',

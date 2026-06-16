@@ -27,6 +27,11 @@ export function applyFocusRingFix(issue: Issue): {
     ? `${existing}\n\n${CSS_BLOCK}`
     : `${existing}${CSS_BLOCK}`;
   mkdirSync(dirname(targetFile), { recursive: true });
-  writeFileSync(targetFile, newContent);
+  try {
+    writeFileSync(targetFile, newContent);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { applied: false, reason: `Could not write CSS: ${message}` };
+  }
   return { applied: true };
 }
