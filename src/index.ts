@@ -97,8 +97,9 @@ function parseThreads(value: string): number {
 }
 
 export function colorForSlop(slopIndex: number): string {
-  if (slopIndex >= 50) return 'red';
-  if (slopIndex >= 25) return 'yellow';
+  if (slopIndex >= 76) return 'red';
+  if (slopIndex >= 51) return 'orange';
+  if (slopIndex >= 26) return 'yellow';
   return 'green';
 }
 

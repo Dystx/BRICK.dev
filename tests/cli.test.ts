@@ -72,18 +72,23 @@ const makeReport = (
 });
 
 describe('colorForSlop', () => {
-  it('returns green for slop index below 25', () => {
+  it('returns green for slop index below 26', () => {
     expect(colorForSlop(0)).toBe('green');
-    expect(colorForSlop(24.9)).toBe('green');
+    expect(colorForSlop(25.9)).toBe('green');
   });
 
-  it('returns yellow for slop index between 25 and 50', () => {
-    expect(colorForSlop(25)).toBe('yellow');
-    expect(colorForSlop(49.9)).toBe('yellow');
+  it('returns yellow for slop index between 26 and 50', () => {
+    expect(colorForSlop(26)).toBe('yellow');
+    expect(colorForSlop(50)).toBe('yellow');
   });
 
-  it('returns red for slop index 50 or above', () => {
-    expect(colorForSlop(50)).toBe('red');
+  it('returns orange for slop index between 51 and 75', () => {
+    expect(colorForSlop(51)).toBe('orange');
+    expect(colorForSlop(75)).toBe('orange');
+  });
+
+  it('returns red for slop index 76 or above', () => {
+    expect(colorForSlop(76)).toBe('red');
     expect(colorForSlop(100)).toBe('red');
   });
 });
@@ -96,16 +101,17 @@ describe('formatBadge', () => {
     expect(badge).toContain('[![');
   });
 
-  it('uses red color for high slop index', () => {
-    const report = makeReport({ slopIndex: 75 });
+  it('uses red color for very high slop index', () => {
+    const report = makeReport({ slopIndex: 76 });
     const badge = formatBadge(report);
     expect(badge).toContain('red');
   });
 
   it('matches badge color to rounded slop index', () => {
     expect(formatBadge(makeReport({ slopIndex: 24.4 }))).toContain('slop--index-24-green');
-    expect(formatBadge(makeReport({ slopIndex: 25 }))).toContain('slop--index-25-yellow');
-    expect(formatBadge(makeReport({ slopIndex: 49.9 }))).toContain('slop--index-50-red');
+    expect(formatBadge(makeReport({ slopIndex: 26 }))).toContain('slop--index-26-yellow');
+    expect(formatBadge(makeReport({ slopIndex: 51 }))).toContain('slop--index-51-orange');
+    expect(formatBadge(makeReport({ slopIndex: 76 }))).toContain('slop--index-76-red');
   });
 });
 
