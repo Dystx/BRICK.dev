@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { writeFileSync, mkdtempSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
 import { parseFile } from '../../src/engine/parser';
 import { extractFacts } from '../../src/engine/visitor';
 import { join } from 'path';
@@ -202,5 +204,72 @@ describe('extractFacts', () => {
     expect(binding.valueName).toBe('target');
     expect(binding.valueReferenced).toBe(false);
     expect(binding.setterReferenced).toBe(false);
+  });
+
+  it('detects Qwik component$ functions as components', async () => {
+    const source = `
+import { component$ } from '@builder.io/qwik';
+
+export const Counter = component$(() => {
+  return <div className="flex">Count</div>;
+});
+`;
+    const dir = mkdtempSync(join(tmpdir(), 'slop-audit-visitor-test-'));
+    try {
+      const filePath = join(dir, 'Counter.tsx');
+      writeFileSync(filePath, source);
+      const { ast, nodeCount } = await parseFile(filePath);
+      const facts = extractFacts(filePath, ast, nodeCount);
+      expect(facts.components.length).toBe(1);
+      expect(facts.components[0].name).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('detects Solid functions using createSignal as components', async () => {
+    const source = `
+import { createSignal } from 'solid-js';
+
+export function Counter() {
+  const [count, setCount] = createSignal(0);
+  return <div className="flex">{count()}</div>;
+}
+`;
+    const dir = mkdtempSync(join(tmpdir(), 'slop-audit-visitor-test-'));
+    try {
+      const filePath = join(dir, 'Counter.tsx');
+      writeFileSync(filePath, source);
+      const { ast, nodeCount } = await parseFile(filePath);
+      const facts = extractFacts(filePath, ast, nodeCount);
+      expect(facts.components.length).toBe(1);
+      expect(facts.components[0].name).toBe('Counter');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('detects Solid functions using createEffect as components', async () => {
+    const source = `
+import { createEffect } from 'solid-js';
+
+export function Timer() {
+  createEffect(() => {
+    console.log('tick');
+  });
+  return <div className="flex">Timer</div>;
+}
+`;
+    const dir = mkdtempSync(join(tmpdir(), 'slop-audit-visitor-test-'));
+    try {
+      const filePath = join(dir, 'Timer.tsx');
+      writeFileSync(filePath, source);
+      const { ast, nodeCount } = await parseFile(filePath);
+      const facts = extractFacts(filePath, ast, nodeCount);
+      expect(facts.components.length).toBe(1);
+      expect(facts.components[0].name).toBe('Timer');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

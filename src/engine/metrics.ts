@@ -1,4 +1,4 @@
-import { relative } from 'node:path';
+import { relative, resolve } from 'node:path';
 import type {
   BaselineCache,
   Category,
@@ -75,41 +75,85 @@ export function scoreFile(
   };
 }
 
+function normalizePath(path: string, cwd: string): string {
+  return relative(cwd, resolve(cwd, path));
+}
+
 /**
  * Compute the hypothetical slop index if the staged files were merged with the
- * baseline. Staged files that also exist in the baseline replace their baseline
- * entry (they are not double-counted). The mean is per-file and the result is
- * size-normalized so it compares consistently with `thresholdExceeded`.
+ * baseline using the component-count-based VirtualN formula from the spec.
+ *
+ * virtualN = cachedTotalComponentCount
+ *            + newStagedComponentCount
+ *            - deletedStagedComponentCount
+ *            + sum(modifiedFile.currentCount - modifiedFile.cachedCount)
+ *
+ * If virtualN <= 0 the calculation degrades to individual file gating.
  */
 export function stagedVirtualMeanThresholdExceeded(
   stagedScores: ComponentScore[],
   baseline: BaselineCache,
   config: ResolvedConfig,
   cwd: string,
+  allStagedPaths?: string[],
 ): { exceeded: boolean; reason?: 'individual' | 'mean' | 'p90'; hypotheticalSlopIndex?: number } {
   if (stagedScores.length === 0) return { exceeded: false };
 
-  const stagedPaths = new Set(stagedScores.map((s) => relative(cwd, s.filePath)));
-  const baselineEntries = Object.entries(baseline.scores).filter(
-    ([path]) => !stagedPaths.has(path),
-  );
+  const stagedPaths = new Set(stagedScores.map((s) => normalizePath(s.filePath, cwd)));
+  const stagedSetForBaseline = allStagedPaths
+    ? new Set(allStagedPaths.map((p) => normalizePath(p, cwd)))
+    : stagedPaths;
 
-  const baselineAdjustedSum = baselineEntries.reduce(
-    (sum, [, entry]) => sum + entry.baselineScore,
-    0,
-  );
-  const stagedAdjustedSum = stagedScores.reduce((sum, score) => sum + score.adjustedScore, 0);
-  const totalFiles = baselineEntries.length + stagedScores.length;
-  const totalComponents =
-    baselineEntries.reduce((sum, [, entry]) => sum + entry.componentCount, 0) +
-    stagedScores.reduce((sum, score) => sum + score.componentCount, 0);
-  const virtualMean = totalFiles === 0 ? 0 : (baselineAdjustedSum + stagedAdjustedSum) / totalFiles;
-  const virtualSlopIndex = virtualMean * sizeNormalization(totalComponents);
+  let newStagedComponentCount = 0;
+  let deletedStagedComponentCount = 0;
+  let modifiedDelta = 0;
+
+  for (const score of stagedScores) {
+    const key = normalizePath(score.filePath, cwd);
+    const cached = baseline.scores[key];
+    if (cached) {
+      modifiedDelta += score.componentCount - cached.componentCount;
+    } else {
+      newStagedComponentCount += score.componentCount;
+    }
+  }
+
+  for (const key of Object.keys(baseline.scores)) {
+    // A staged baseline path that has no matching staged score is a deletion.
+    if (stagedSetForBaseline.has(key) && !stagedPaths.has(key)) {
+      deletedStagedComponentCount += baseline.scores[key].componentCount;
+    }
+  }
+
+  const virtualN =
+    baseline.totalComponentCount +
+    newStagedComponentCount -
+    deletedStagedComponentCount +
+    modifiedDelta;
+
+  // Degrade to individual file gating when the project component count
+  // would collapse (e.g. an all-deletion staged set).
+  if (virtualN <= 0) {
+    const maxStagedScore = Math.max(...stagedScores.map((score) => score.adjustedScore));
+    return {
+      exceeded: maxStagedScore > config.thresholds.individualSlopThreshold,
+      reason: maxStagedScore > config.thresholds.individualSlopThreshold ? 'individual' : undefined,
+    };
+  }
+
+  // Numerator: adjusted scores of staged files plus zero for unchanged baseline
+  // files (their legacy slop is forgiven by the baseline).
+  const numerator = stagedScores.reduce((sum, score) => sum + score.adjustedScore, 0);
+  const hypotheticalMean = numerator / virtualN;
+  const virtualSlopIndex = hypotheticalMean * sizeNormalization(virtualN);
 
   if (virtualSlopIndex > config.thresholds.meanSlop) {
     return { exceeded: true, reason: 'mean', hypotheticalSlopIndex: virtualSlopIndex };
   }
 
+  const baselineEntries = Object.entries(baseline.scores).filter(
+    ([path]) => !stagedPaths.has(path),
+  );
   const virtualScores = [
     ...baselineEntries.map(([, entry]) => entry.baselineScore),
     ...stagedScores.map((score) => score.adjustedScore),

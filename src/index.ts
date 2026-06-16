@@ -269,6 +269,7 @@ interface ScanRunResult {
   config: ResolvedConfig;
   baseline?: BaselineCache;
   configElapsed: number;
+  stagedPaths?: string[];
 }
 
 function assembleProjectReport(
@@ -535,9 +536,10 @@ async function runScan(
     process.exit(2);
   }
 
+  let stagedPaths: string[] | undefined;
   if (options.staged) {
-    const staged = await getStagedFiles(cwd);
-    files = intersectFiles(files, staged, cwd);
+    stagedPaths = await getStagedFiles(cwd);
+    files = intersectFiles(files, stagedPaths, cwd);
   }
   if (options.since) {
     const since = await getFilesSince(cwd, options.since);
@@ -612,7 +614,7 @@ async function runScan(
   // project mean separately, so it keeps a staged-only report for output.
   const mergeBaseline = !!(options.since || (explicitPaths && explicitPaths.length > 0));
   const { report, scores } = assembleProjectReport(results, config, options, baseline, cwd, mergeBaseline);
-  return { report, scores, config, baseline, configElapsed };
+  return { report, scores, config, baseline, configElapsed, stagedPaths };
 }
 
 export async function scanProject(options: ScanProjectOptions): Promise<ProjectReport> {
@@ -1051,7 +1053,7 @@ export async function runCli({ start }: { start: number }): Promise<void> {
 
       if (options.staged) {
         if (baseline) {
-          const check = stagedVirtualMeanThresholdExceeded(scores, baseline, config, cwd);
+          const check = stagedVirtualMeanThresholdExceeded(scores, baseline, config, cwd, scanResult.stagedPaths);
           exitCode = check.exceeded ? 1 : 0;
           stagedReason = check.reason;
         } else {

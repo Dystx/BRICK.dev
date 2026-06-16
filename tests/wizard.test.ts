@@ -39,6 +39,30 @@ describe('detectProjectFacts', () => {
     expect(facts.framework).toBe('vue');
   });
 
+  it('detects solid framework', () => {
+    writeFileSync(
+      join(dir, 'package.json'),
+      JSON.stringify({ dependencies: { 'solid-js': '^1.0' } }),
+    );
+    const facts = detectProjectFacts(dir);
+    expect(facts.framework).toBe('solid');
+  });
+
+  it('detects qwik framework from @builder.io/qwik', () => {
+    writeFileSync(
+      join(dir, 'package.json'),
+      JSON.stringify({ dependencies: { '@builder.io/qwik': '^1.0' } }),
+    );
+    const facts = detectProjectFacts(dir);
+    expect(facts.framework).toBe('qwik');
+  });
+
+  it('detects qwik framework from qwik alias', () => {
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ dependencies: { qwik: '^1.0' } }));
+    const facts = detectProjectFacts(dir);
+    expect(facts.framework).toBe('qwik');
+  });
+
   it('detects shadcn/ui from components/ui directory', () => {
     mkdirSync(join(dir, 'components', 'ui'), { recursive: true });
     const facts = detectProjectFacts(dir);

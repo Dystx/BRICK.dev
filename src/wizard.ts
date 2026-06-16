@@ -76,6 +76,7 @@ export function detectProjectFacts(cwd: string): DetectedProjectFacts {
   if (hasDependency(pkg, 'vue')) framework = 'vue';
   else if (hasDependency(pkg, 'svelte')) framework = 'svelte';
   else if (hasDependency(pkg, 'solid-js')) framework = 'solid';
+  else if (hasDependency(pkg, '@builder.io/qwik') || hasDependency(pkg, 'qwik')) framework = 'qwik';
 
   let styling = 'plain-css';
   if (hasDependency(pkg, 'tailwindcss')) styling = 'tailwind';
@@ -200,7 +201,7 @@ export async function runWizard(cwd: string, options: WizardOptions = {}): Promi
   try {
     output.write('No slop-audit config found. Let\'s calibrate for this project.\n\n');
 
-    const framework = await askChoiceFn('Framework?', ['react', 'vue', 'svelte', 'solid', 'other'], detected.framework);
+    const framework = await askChoiceFn('Framework?', ['react', 'vue', 'svelte', 'solid', 'qwik', 'other'], detected.framework);
     const styling = await askChoiceFn(
       'Styling solution?',
       ['tailwind', 'css-modules', 'styled-components', 'emotion', 'plain-css'],

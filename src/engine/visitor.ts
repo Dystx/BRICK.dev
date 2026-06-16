@@ -107,6 +107,14 @@ function containsJsx(node: AnyNode): boolean {
   return false;
 }
 
+function isForcedLayoutWrapper(classes: readonly string[]): boolean {
+  return (
+    classes.includes('flex') &&
+    classes.includes('flex-col') &&
+    classes.some((c) => c.startsWith('gap-') && !c.startsWith('gap-x-') && !c.startsWith('gap-y-'))
+  );
+}
+
 function stringLiteralValue(node: AnyNode): string | undefined {
   if (isObject(node) && node.type === 'StringLiteral' && typeof node.value === 'string') {
     return node.value as string;
@@ -177,6 +185,37 @@ function unwrapJsxExpression(node: AnyNode): AnyNode {
     return node.expression as AnyNode;
   }
   return node;
+}
+
+function isQwikWrapper(parent: AnyNode): boolean {
+  if (!isObject(parent) || parent.type !== 'CallExpression') return false;
+  const callee = parent.callee as AnyNode;
+  return isObject(callee) && callee.type === 'Identifier' && typeof callee.value === 'string' && callee.value === 'component$';
+}
+
+function containsSolidSignal(node: AnyNode): boolean {
+  if (!isObject(node)) return false;
+  if (node.type === 'CallExpression') {
+    const callee = node.callee as AnyNode;
+    if (
+      isObject(callee) &&
+      callee.type === 'Identifier' &&
+      typeof callee.value === 'string' &&
+      (callee.value === 'createSignal' || callee.value === 'createEffect')
+    ) {
+      return true;
+    }
+  }
+  for (const value of Object.values(node)) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (containsSolidSignal(item)) return true;
+      }
+    } else if (isObject(value)) {
+      if (containsSolidSignal(value)) return true;
+    }
+  }
+  return false;
 }
 
 function getFunctionName(node: Record<string, unknown>): string | undefined {
@@ -334,6 +373,61 @@ export function extractFacts(
     positionFrom(node, lineOffsets, offset);
   const text = (node: AnyNode): string => sourceText(node, source, offset);
 
+  function classesFromOpeningElement(opening: AnyNode): string[] {
+    if (!isObject(opening) || opening.type !== 'JSXOpeningElement') return [];
+    const attrs = opening.attributes as AnyNode[];
+    if (!Array.isArray(attrs)) return [];
+    for (const attr of attrs) {
+      if (!isObject(attr) || attr.type !== 'JSXAttribute') continue;
+      const name = jsxAttrName(attr);
+      if (name !== 'className' && name !== 'class') continue;
+      const raw = attr.value as AnyNode;
+      const valueNode = unwrapJsxExpression(raw);
+      const classValue = staticClassValue(valueNode);
+      if (classValue !== undefined) {
+        return classValue.split(/\s+/).filter((part) => part.length > 0);
+      }
+    }
+    return [];
+  }
+
+  function isWhitespaceOnlyJsxText(node: AnyNode): boolean {
+    if (!isObject(node) || node.type !== 'JSXText') return false;
+    return typeof node.value === 'string' && (node.value as string).trim() === '';
+  }
+
+  function collectForcedLayoutGroups(element: AnyNode): Array<{ line: number; column: number; count: number }> {
+    if (!isObject(element) || (element.type !== 'JSXElement' && element.type !== 'JSXFragment')) return [];
+    const children = element.children as AnyNode[];
+    if (!Array.isArray(children)) return [];
+
+    const groups: Array<{ line: number; column: number; count: number }> = [];
+    let current: { line: number; column: number; count: number } | undefined;
+
+    for (const child of children) {
+      if (isWhitespaceOnlyJsxText(child)) continue;
+      if (!isObject(child) || child.type !== 'JSXElement') {
+        current = undefined;
+        continue;
+      }
+      const opening = child.opening as AnyNode;
+      const classes = classesFromOpeningElement(opening);
+      if (isForcedLayoutWrapper(classes)) {
+        const { line, column } = position(opening);
+        if (current) {
+          current.count++;
+        } else {
+          current = { line, column, count: 1 };
+          groups.push(current);
+        }
+      } else {
+        current = undefined;
+      }
+    }
+
+    return groups.filter((group) => group.count > 1);
+  }
+
   const facts: ScanFacts = {
     filePath,
     astNodeCount: nodeCount,
@@ -344,6 +438,7 @@ export function extractFacts(
     interactiveElements: [],
     hooks: [],
     logicalExpressions: [],
+    forcedLayoutGroups: [],
   };
 
   const ctx: WalkContext = {
@@ -398,7 +493,7 @@ export function extractFacts(
     return [];
   }
 
-  function pushFrame(node: Record<string, unknown>): void {
+  function pushFrame(node: Record<string, unknown>, parent: AnyNode): void {
     const name = getFunctionName(node);
     const { line, column } = position(node);
     const bindings = new Set<string>();
@@ -421,7 +516,7 @@ export function extractFacts(
       hookCalls: [],
       stateBindings: [],
       headings: [],
-      isComponent: containsJsx(node),
+      isComponent: containsJsx(node) || isQwikWrapper(parent) || containsSolidSignal(node),
       bindings,
     });
   }
@@ -525,6 +620,12 @@ export function extractFacts(
     if (!isObject(node)) return false;
 
     const type = getNodeType(node);
+
+    // Detect consecutive forced-layout wrapper siblings in the JSX tree.
+    if (type === 'JSXElement' || type === 'JSXFragment') {
+      const groups = collectForcedLayoutGroups(node);
+      facts.forcedLayoutGroups.push(...groups);
+    }
 
     // Detect "use client" directive at the top of the module.
     if (type === 'ExpressionStatement') {
@@ -705,7 +806,7 @@ export function extractFacts(
     const isFunction = type === 'FunctionDeclaration' || type === 'FunctionExpression' || type === 'ArrowFunctionExpression';
 
     if (isFunction) {
-      pushFrame(node);
+      pushFrame(node, parent);
     }
 
     const skipChildren = processNode(node, parent);

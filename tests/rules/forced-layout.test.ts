@@ -60,7 +60,7 @@ export function Page() {
     expect(issues).toHaveLength(0);
   });
 
-  it('flags repetitive wrappers above threshold', async () => {
+  it('flags consecutive repetitive wrappers above threshold', async () => {
     const source = `
 export function Page() {
   return (
@@ -75,7 +75,40 @@ export function Page() {
     const issues = await runRule(source, makeConfig());
     expect(issues).toHaveLength(1);
     expect(issues[0].ruleId).toBe('visual/forced-layout');
-    expect(issues[0].message).toBe('Repetitive flex flex-col gap-* wrappers detected; extract a layout primitive.');
+    expect(issues[0].message).toBe('Consecutive flex flex-col gap-* wrappers detected; extract a layout primitive.');
+  });
+
+  it('does not flag non-consecutive wrappers', async () => {
+    const source = `
+export function Page() {
+  return (
+    <>
+      <div className="flex flex-col gap-4">A</div>
+      <span>separator</span>
+      <div className="flex flex-col gap-4">B</div>
+      <span>separator</span>
+      <div className="flex flex-col gap-4">C</div>
+    </>
+  );
+}
+`;
+    const issues = await runRule(source, makeConfig());
+    expect(issues).toHaveLength(0);
+  });
+
+  it('does not flag nested wrappers as consecutive siblings', async () => {
+    const source = `
+export function Page() {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4">A</div>
+      <div className="flex flex-col gap-4">B</div>
+    </div>
+  );
+}
+`;
+    const issues = await runRule(source, makeConfig());
+    expect(issues).toHaveLength(0);
   });
 
   it('does not flag when gapTokens are configured', async () => {

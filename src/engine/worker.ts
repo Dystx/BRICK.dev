@@ -4,6 +4,9 @@ import { extractFacts } from './visitor';
 import { RuleRegistry } from '../rules/registry';
 import type { FileScanResult, ResolvedConfig } from '../types';
 
+const WORKER_CRASH_MARKER = '__slop_audit_crash__';
+const IS_TEST_ENV = process.env.NODE_ENV === 'test' || process.env.VITEST !== undefined;
+
 /**
  * Scan a single file for slop issues.
  *
@@ -67,6 +70,12 @@ async function run(): Promise<void> {
   registry.loadBuiltins();
 
   for (const filePath of filePaths) {
+    // Deliberate crash path for testing worker respawn resilience. Only active
+    // in test environments; normal parse errors are still handled by scanFile's
+    // try/catch.
+    if (IS_TEST_ENV && filePath.includes(WORKER_CRASH_MARKER)) {
+      throw new Error(`Simulated worker crash on ${filePath}`);
+    }
     const result = await scanFile(filePath, config, registry);
     parentPort?.postMessage(result);
   }

@@ -108,6 +108,12 @@ export interface HeadingFact {
   column: number;
 }
 
+export interface ForcedLayoutGroup {
+  line: number;
+  column: number;
+  count: number;
+}
+
 export interface ScanFacts {
   filePath: string;
   astNodeCount: number;
@@ -118,6 +124,7 @@ export interface ScanFacts {
   interactiveElements: ElementFact[];
   hooks: HookFact[];
   logicalExpressions: LogicalExpressionFact[];
+  forcedLayoutGroups: ForcedLayoutGroup[];
 }
 
 export interface FileScanResult {

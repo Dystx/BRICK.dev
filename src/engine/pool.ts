@@ -58,30 +58,55 @@ export class WorkerPool {
       let settled = false;
       let currentWorker: Worker | undefined;
       let lastError: Error | undefined;
+      let remainingBatch = [...batch];
 
       const cleanup = (worker: Worker, timer: ReturnType<typeof setTimeout>) => {
         clearTimeout(timer);
         worker.terminate().catch(() => {});
       };
 
+      const recordFailure = (filePath: string, reason: string): void => {
+        if (!seen.has(filePath)) {
+          seen.add(filePath);
+          results.push({
+            filePath,
+            componentCount: 0,
+            astNodeCount: 0,
+            issues: [],
+            parseError: `PARSE_ERROR: ${reason}`,
+          });
+        }
+      };
+
       const recordFailures = (reason: string): void => {
-        for (const filePath of batch) {
-          if (!seen.has(filePath)) {
-            seen.add(filePath);
-            results.push({
-              filePath,
-              componentCount: 0,
-              astNodeCount: 0,
-              issues: [],
-              parseError: `PARSE_ERROR: ${reason}`,
-            });
+        for (const filePath of remainingBatch) {
+          recordFailure(filePath, reason);
+        }
+      };
+
+      const handleCrash = (reason: string): void => {
+        if (settled) return;
+        if (retries < MAX_RETRIES) {
+          retries++;
+          // The worker processes files sequentially and crashes while handling
+          // the first unprocessed file in the batch. Record that file as a
+          // parse error and respawn the worker to finish the rest.
+          const culprit = remainingBatch.shift();
+          if (culprit) {
+            recordFailure(culprit, reason);
           }
+          lastError = undefined;
+          spawn();
+        } else {
+          settled = true;
+          recordFailures(reason);
+          res();
         }
       };
 
       const spawn = () => {
         const worker = new Worker(this.workerScript, {
-          workerData: { filePaths: batch, config: this.config },
+          workerData: { filePaths: remainingBatch, config: this.config },
         });
         currentWorker = worker;
 
@@ -105,6 +130,10 @@ export class WorkerPool {
             seen.add(msg.filePath);
             results.push(msg);
           }
+          const index = remainingBatch.indexOf(msg.filePath);
+          if (index >= 0) {
+            remainingBatch.splice(index, 1);
+          }
         });
 
         worker.on('error', (err) => {
@@ -112,14 +141,7 @@ export class WorkerPool {
           cleanup(worker, timer);
           lastError = err;
           console.error('Worker error:', err);
-          if (retries < MAX_RETRIES) {
-            retries++;
-            spawn();
-          } else {
-            settled = true;
-            recordFailures(lastError?.message ?? 'worker crashed');
-            res();
-          }
+          handleCrash(err.message);
         });
 
         worker.on('exit', (code) => {
@@ -131,15 +153,7 @@ export class WorkerPool {
           } else {
             const err = lastError ?? new Error(`Worker exited with code ${code}`);
             console.error(`Worker exited with code ${code}`);
-            if (retries < MAX_RETRIES) {
-              retries++;
-              lastError = undefined;
-              spawn();
-            } else {
-              settled = true;
-              recordFailures(err.message);
-              res();
-            }
+            handleCrash(err.message);
           }
         });
       };

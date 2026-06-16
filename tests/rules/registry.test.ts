@@ -33,6 +33,7 @@ function makeFacts(): ScanFacts {
     interactiveElements: [],
     hooks: [],
     logicalExpressions: [],
+    forcedLayoutGroups: [],
   };
 }
 

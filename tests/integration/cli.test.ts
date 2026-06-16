@@ -255,7 +255,7 @@ describe('pre-commit gating', () => {
 
     const config = {
       ...DEFAULT_CONFIG,
-      thresholds: { ...DEFAULT_CONFIG.thresholds, meanSlop: 5, individualSlopThreshold: 50 },
+      thresholds: { ...DEFAULT_CONFIG.thresholds, meanSlop: 3, individualSlopThreshold: 50 },
     };
     writeFileSync(join(dir, 'slop-audit.config.mjs'), serializeConfig(config));
 
