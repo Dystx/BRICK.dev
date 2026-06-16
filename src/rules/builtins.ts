@@ -26,6 +26,15 @@ import { arbitraryAnimationRule } from './motion/arbitrary-animation';
 import { arbitraryZIndexRule } from './visual/arbitrary-z-index';
 import { arbitraryShadowRule } from './visual/arbitrary-shadow';
 import { arbitraryRadiusRule } from './visual/arbitrary-radius';
+import { clampSoupRule } from './visual/clamp-soup';
+import { calcFontSizeRule } from './typo/calc-fontsize';
+import { clampOffscaleRule } from './typo/clamp-offscale';
+import { draggingMovementsRule } from './wcag/dragging-movements';
+import { shadcnPropMismatchRule } from './component/shadcn-prop-mismatch';
+import { qwikHookLeakRule } from './logic/qwik-hook-leak';
+import { clsImageRule } from './perf/cls-image';
+import { cssBloatRule } from './perf/css-bloat';
+import { astroIslandLeakRule } from './arch/astro-island-leak';
 
 export const builtinRules: Rule[] = [
   arbitraryEscapeRule,
@@ -37,11 +46,15 @@ export const builtinRules: Rule[] = [
   targetSizeRule,
   focusAppearanceRule,
   focusObscuredRule,
+  draggingMovementsRule,
   gapMonopolyRule,
   calcRawPxRule,
+  calcFontSizeRule,
+  clampOffscaleRule,
   inlineStyleRule,
   hardcodedColorRule,
   primitiveReinventionRule,
+  shadcnPropMismatchRule,
   headingHierarchyRule,
   hardcodedFontSizeRule,
   hardcodedLineHeightRule,
@@ -55,4 +68,9 @@ export const builtinRules: Rule[] = [
   arbitraryZIndexRule,
   arbitraryShadowRule,
   arbitraryRadiusRule,
+  clampSoupRule,
+  qwikHookLeakRule,
+  clsImageRule,
+  cssBloatRule,
+  astroIslandLeakRule,
 ];

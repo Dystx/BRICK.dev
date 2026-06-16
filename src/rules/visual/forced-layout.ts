@@ -4,6 +4,7 @@ import { splitClassName } from '../utils';
 
 export interface ForcedLayoutContext {
   threshold: number;
+  gapTokens: readonly string[] | undefined;
 }
 
 const DEFAULT_THRESHOLD = 2;
@@ -31,9 +32,15 @@ export const forcedLayoutRule = createRule<ForcedLayoutContext>({
   create(context: RuleContext): ForcedLayoutContext {
     return {
       threshold: resolveThreshold(context.config.ruleConfig.forcedLayoutThreshold),
+      gapTokens: context.config.gapTokens,
     };
   },
   analyze(context: ForcedLayoutContext, facts: ScanFacts): Issue[] {
+    // Spec exemption: a restricted gap-token set implies an intentional design system.
+    if (context.gapTokens && context.gapTokens.length >= 1) {
+      return [];
+    }
+
     let count = 0;
     let first: { line: number; column: number } | undefined;
 

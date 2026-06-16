@@ -52,7 +52,7 @@ export class RuleRegistry {
   }
 
   createContexts(config: ResolvedConfig, filePath: string): EnabledRule[] {
-    const context: RuleContext = { config, filePath };
+    const context: RuleContext = { config, filePath, registry: this };
     return this.resolveEnabledRules(config).map((rule) => ({
       rule,
       context: rule.create(context),

@@ -114,6 +114,7 @@ export interface ScanFacts {
   components: ComponentFacts[];
   staticClassNames: ClassNameFact[];
   styleProps: StylePropFact[];
+  jsxElements: ElementFact[];
   interactiveElements: ElementFact[];
   hooks: HookFact[];
   logicalExpressions: LogicalExpressionFact[];
@@ -170,6 +171,11 @@ export interface BaselineCache {
 export interface RuleContext {
   config: ResolvedConfig;
   filePath: string;
+  /**
+   * The registry that created this context. Rules can use it to store
+   * cross-file state that persists for the lifetime of a worker or scan.
+   */
+  registry?: import('./rules/registry').RuleRegistry;
 }
 
 export interface Rule<Context = unknown> {

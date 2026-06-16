@@ -4,7 +4,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { parseFile } from '../../src/engine/parser';
 import { extractFacts } from '../../src/engine/visitor';
-import { forcedLayoutRule } from '../../src/rules/visual/forced-layout';
+import { calcFontSizeRule } from '../../src/rules/typo/calc-fontsize';
 import type { ResolvedConfig, RuleContext } from '../../src/types';
 
 function makeConfig(overrides?: Partial<ResolvedConfig>): ResolvedConfig {
@@ -30,86 +30,60 @@ async function runRule(
   source: string,
   config: ResolvedConfig,
   fileName = 'Component.tsx',
-): Promise<ReturnType<typeof forcedLayoutRule.analyze>> {
-  const dir = mkdtempSync(join(tmpdir(), 'slop-audit-forced-layout-test-'));
+): Promise<ReturnType<typeof calcFontSizeRule.analyze>> {
+  const dir = mkdtempSync(join(tmpdir(), 'slop-audit-calc-fontsize-test-'));
   try {
     const filePath = join(dir, fileName);
     writeFileSync(filePath, source);
     const { ast, nodeCount } = await parseFile(filePath);
     const facts = extractFacts(filePath, ast, nodeCount);
     const context: RuleContext = { config, filePath };
-    const ruleContext = forcedLayoutRule.create(context);
-    return forcedLayoutRule.analyze(ruleContext, facts);
+    return calcFontSizeRule.analyze(undefined, facts);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 }
 
-describe('forced-layout', () => {
-  it('allows a single flex flex-col gap-* wrapper', async () => {
+describe('typo/calc-fontsize', () => {
+  it('flags fontSize style with calc()', async () => {
     const source = `
 export function Page() {
-  return (
-    <div className="flex flex-col gap-4">
-      Hello
-    </div>
-  );
-}
-`;
-    const issues = await runRule(source, makeConfig());
-    expect(issues).toHaveLength(0);
-  });
-
-  it('flags repetitive wrappers above threshold', async () => {
-    const source = `
-export function Page() {
-  return (
-    <>
-      <div className="flex flex-col gap-4">A</div>
-      <div className="flex flex-col gap-4">B</div>
-      <div className="flex flex-col gap-4">C</div>
-    </>
-  );
+  return <div style={{ fontSize: 'calc(1rem + 1vw)' }}>Content</div>;
 }
 `;
     const issues = await runRule(source, makeConfig());
     expect(issues).toHaveLength(1);
-    expect(issues[0].ruleId).toBe('visual/forced-layout');
-    expect(issues[0].message).toBe('Repetitive flex flex-col gap-* wrappers detected; extract a layout primitive.');
+    expect(issues[0].ruleId).toBe('typo/calc-fontsize');
+    expect(issues[0].severity).toBe('medium');
   });
 
-  it('does not flag when gapTokens are configured', async () => {
+  it('flags font-size style with calc()', async () => {
     const source = `
 export function Page() {
-  return (
-    <>
-      <div className="flex flex-col gap-4">A</div>
-      <div className="flex flex-col gap-4">B</div>
-      <div className="flex flex-col gap-4">C</div>
-    </>
-  );
+  return <div style={{ 'font-size': 'calc(14px + 2px)' }}>Content</div>;
 }
 `;
-    const issues = await runRule(source, makeConfig({ gapTokens: ['gap-4'] }));
+    const issues = await runRule(source, makeConfig());
+    expect(issues).toHaveLength(1);
+  });
+
+  it('ignores fontSize with a token string', async () => {
+    const source = `
+export function Page() {
+  return <div style={{ fontSize: '1.25rem' }}>Content</div>;
+}
+`;
+    const issues = await runRule(source, makeConfig());
     expect(issues).toHaveLength(0);
   });
 
-  it('respects a higher threshold', async () => {
+  it('ignores calc in non-font-size properties', async () => {
     const source = `
 export function Page() {
-  return (
-    <>
-      <div className="flex flex-col gap-4">A</div>
-      <div className="flex flex-col gap-4">B</div>
-      <div className="flex flex-col gap-4">C</div>
-    </>
-  );
+  return <div style={{ width: 'calc(100% - 1rem)' }}>Content</div>;
 }
 `;
-    const issues = await runRule(
-      source,
-      makeConfig({ ruleConfig: { forcedLayoutThreshold: 3 } }),
-    );
+    const issues = await runRule(source, makeConfig());
     expect(issues).toHaveLength(0);
   });
 });

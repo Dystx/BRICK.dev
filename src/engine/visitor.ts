@@ -140,6 +140,21 @@ function jsxAttrName(node: AnyNode): string | undefined {
   if (isObject(name) && typeof (name as Record<string, unknown>).name === 'string') {
     return (name as Record<string, unknown>).name as string;
   }
+  // Handle JSXNamespacedName such as client:load in Astro/MDX.
+  if (
+    isObject(name) &&
+    name.type === 'JSXNamespacedName' &&
+    typeof (name as Record<string, unknown>).namespace === 'object' &&
+    typeof (name as Record<string, unknown>).name === 'object'
+  ) {
+    const ns = (name as Record<string, unknown>).namespace as Record<string, unknown>;
+    const local = (name as Record<string, unknown>).name as Record<string, unknown>;
+    const nsName = typeof ns.value === 'string' ? ns.value : typeof ns.name === 'string' ? ns.name : undefined;
+    const localName = typeof local.value === 'string' ? local.value : typeof local.name === 'string' ? local.name : undefined;
+    if (nsName && localName) {
+      return `${nsName}:${localName}`;
+    }
+  }
   return undefined;
 }
 
@@ -308,6 +323,7 @@ export function extractFacts(filePath: string, ast: Module, nodeCount: number): 
     components: [],
     staticClassNames: [],
     styleProps: [],
+    jsxElements: [],
     interactiveElements: [],
     hooks: [],
     logicalExpressions: [],
@@ -571,35 +587,37 @@ export function extractFacts(filePath: string, ast: Module, nodeCount: number): 
       }
     }
 
-    // Detect interactive elements (native or custom via onClick).
+    // Collect every JSX element (with static attributes) for component-registry checks.
     if (type === 'JSXOpeningElement') {
       const tag = jsxElementName(node);
       const attrs = node.attributes as AnyNode[];
-      const hasOnClick = attrs.some(
-        (attr) =>
-          isObject(attr) && attr.type === 'JSXAttribute' && jsxAttrName(attr) === 'onClick',
-      );
-      if (tag === 'button' || tag === 'a' || tag === 'input' || hasOnClick) {
-        const attributes: Record<string, string | undefined> = {};
-        const classNames: ClassNameFact[] = [];
-        for (const attr of attrs) {
-          if (!isObject(attr) || attr.type !== 'JSXAttribute') continue;
-          const name = jsxAttrName(attr);
-          if (!name) continue;
-          const raw = attr.value as AnyNode;
-          const valueNode = unwrapJsxExpression(raw);
-          const staticValue = stringLiteralValue(valueNode);
-          attributes[name] = staticValue;
-          if (name === 'className' || name === 'class') {
-            const classValue = staticClassValue(valueNode);
-            if (classValue !== undefined) {
-              const { line, column } = positionFrom(attr, lineOffsets);
-              classNames.push({ value: classValue, line, column });
-            }
+      const attributes: Record<string, string | undefined> = {};
+      const classNames: ClassNameFact[] = [];
+      let hasOnClick = false;
+      for (const attr of attrs) {
+        if (!isObject(attr) || attr.type !== 'JSXAttribute') continue;
+        const name = jsxAttrName(attr);
+        if (!name) continue;
+        const raw = attr.value as AnyNode;
+        const valueNode = unwrapJsxExpression(raw);
+        const staticValue = stringLiteralValue(valueNode);
+        attributes[name] = staticValue;
+        if (name === 'className' || name === 'class') {
+          const classValue = staticClassValue(valueNode);
+          if (classValue !== undefined) {
+            const { line, column } = positionFrom(attr, lineOffsets);
+            classNames.push({ value: classValue, line, column });
           }
         }
-        const { line, column } = positionFrom(node, lineOffsets);
-        facts.interactiveElements.push({ tag: tag as string, attributes, classNames, line, column });
+        if (name === 'onClick') {
+          hasOnClick = true;
+        }
+      }
+      const { line, column } = positionFrom(node, lineOffsets);
+      const elementFact = { tag: tag as string, attributes, classNames, line, column };
+      facts.jsxElements.push(elementFact);
+      if (tag === 'button' || tag === 'a' || tag === 'input' || hasOnClick) {
+        facts.interactiveElements.push(elementFact);
       }
     }
 
