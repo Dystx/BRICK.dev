@@ -87,10 +87,19 @@ export function formatPretty(report: ProjectReport): string {
   );
   sections.push(chalk.dim('(0-100, higher = better, inverse of Slop Index)'));
 
+  if (report.baseline?.active) {
+    const date = new Date(report.baseline.createdAt).toLocaleDateString();
+    sections.push(
+      chalk.cyan(
+        `Baseline active since ${date} (Revision ${report.baseline.baselineRevision}). Run \`slop-audit --tighten\` to reduce baseline forgiveness by 10%.`,
+      ),
+    );
+  }
+
   if (report.componentCount <= 10) {
     sections.push(
       chalk.yellow(
-        `⚠ Micro-repo warning: only ${report.componentCount} component(s) scanned; scores may be noisy.`,
+        `Small project detected (<=10 components). Scores are not normalized. Focus on keeping individual component scores low.`,
       ),
     );
   }

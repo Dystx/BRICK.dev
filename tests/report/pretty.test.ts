@@ -79,14 +79,29 @@ describe('formatPretty', () => {
   it('warns about micro-repos', () => {
     const output = formatPretty(makeReport(8));
 
-    expect(output).toContain('Micro-repo warning');
-    expect(output).toContain('8 component(s) scanned');
+    expect(output).toContain('Small project detected (<=10 components)');
+    expect(output).toContain('Scores are not normalized');
   });
 
   it('does not warn for larger repos', () => {
     const output = formatPretty(makeReport(25));
 
-    expect(output).not.toContain('Micro-repo warning');
+    expect(output).not.toContain('Small project detected');
+  });
+
+  it('prints the baseline-active message when a baseline is in use', () => {
+    const report = makeReport(25);
+    report.baseline = {
+      active: true,
+      version: '1.0.0',
+      baselineRevision: 2,
+      createdAt: '2025-01-15T12:00:00.000Z',
+    };
+    const output = formatPretty(report);
+
+    expect(output).toContain('Baseline active since');
+    expect(output).toContain('(Revision 2)');
+    expect(output).toContain('slop-audit --tighten');
   });
 
   it('shows category breakdown rows sorted by score', () => {
