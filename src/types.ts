@@ -185,6 +185,13 @@ export interface Rule<Context = unknown> {
   aiSpecific: boolean;
   create(context: RuleContext): Context;
   analyze(context: Context, facts: ScanFacts): Issue[];
+  /**
+   * Optional hook called before a file is rescanned in watch mode.
+   * Rules with cross-file state should clear any stale contributions
+   * from the given file path. The rule context is the same instance that
+   * will be used for the upcoming analyze pass.
+   */
+  beforeRescan?(context: Context, filePath: string): void;
 }
 
 export interface ResolvedConfig {

@@ -5,6 +5,7 @@ import { join } from 'path';
 import { parseFile } from '../../../src/engine/parser';
 import { extractFacts } from '../../../src/engine/visitor';
 import { cssBloatRule } from '../../../src/rules/perf/css-bloat';
+import { RuleRegistry } from '../../../src/rules/registry';
 import type { ResolvedConfig, RuleContext } from '../../../src/types';
 
 function makeConfig(): ResolvedConfig {
@@ -150,5 +151,50 @@ export function Card() {
     const files = [{ name: 'Card.tsx', source }];
     const issues = await runAcrossFiles(files);
     expect(issues).toHaveLength(0);
+  });
+
+  it('beforeRescan removes a file from the cross-file accumulator', async () => {
+    const className = 'flex items-center';
+    const registry = new RuleRegistry();
+    registry.register(cssBloatRule);
+    const dir = mkdtempSync(join(tmpdir(), 'slop-audit-css-bloat-rescan-'));
+    try {
+      const context = registry.createContexts(makeConfig(), join(dir, 'A.tsx'))[0].context as ReturnType<typeof cssBloatRule.create>;
+      const filePaths: string[] = [];
+      for (let i = 0; i < 6; i++) {
+        const filePath = join(dir, `Component${i}.tsx`);
+        filePaths.push(filePath);
+        writeFileSync(filePath, componentWithClass(className));
+        const { ast, nodeCount } = await parseFile(filePath);
+        const facts = extractFacts(filePath, ast, nodeCount);
+        cssBloatRule.analyze(context, facts);
+      }
+
+      // After 6 distinct files the rule should have reported once.
+      let issues = cssBloatRule.analyze(context, extractFacts(filePaths[0], (await parseFile(filePaths[0])).ast, (await parseFile(filePaths[0])).nodeCount));
+      expect(issues).toHaveLength(0);
+
+      cssBloatRule.beforeRescan?.(context, filePaths[0]);
+      // Removing one file drops the distinct count to 5, so re-analyzing the
+      // remaining files should not produce a new issue.
+      let afterRescanIssues: ReturnType<typeof cssBloatRule.analyze> = [];
+      for (let i = 1; i < 6; i++) {
+        const { ast, nodeCount } = await parseFile(filePaths[i]);
+        const facts = extractFacts(filePaths[i], ast, nodeCount);
+        afterRescanIssues.push(...cssBloatRule.analyze(context, facts));
+      }
+      expect(afterRescanIssues).toHaveLength(0);
+
+      // Adding a fresh 7th file pushes the count back over the threshold.
+      const seventh = join(dir, 'Component6.tsx');
+      writeFileSync(seventh, componentWithClass(className));
+      const { ast, nodeCount } = await parseFile(seventh);
+      const facts = extractFacts(seventh, ast, nodeCount);
+      const newIssues = cssBloatRule.analyze(context, facts);
+      expect(newIssues).toHaveLength(1);
+      expect(newIssues[0].message).toContain('6 distinct files');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

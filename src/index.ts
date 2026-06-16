@@ -22,6 +22,8 @@ import {
   refreshRegistrySnapshot,
 } from './rules/component/registry.js';
 import { WorkerPool } from './engine/pool.js';
+import { scanFile } from './engine/worker.js';
+import { RuleRegistry } from './rules/registry.js';
 import {
   scoreFile,
   aggregateReport,
@@ -252,6 +254,61 @@ interface ScanRunResult {
   configElapsed: number;
 }
 
+function assembleProjectReport(
+  results: FileScanResult[],
+  config: ResolvedConfig,
+  options: Pick<ScanRunOptions, 'aiOnly' | 'humanOnly' | 'ignoreWcag22'>,
+  baseline: BaselineCache | undefined,
+  cwd: string,
+): { report: ProjectReport; scores: ComponentScore[] } {
+  for (const result of results) {
+    result.issues = filterIssues(result.issues, options);
+    for (const issue of result.issues) {
+      if (issue.filePath === undefined) {
+        issue.filePath = result.filePath;
+      }
+    }
+  }
+
+  const multiplier = resolveFrameworkMultiplier(config);
+  const scores = results.map((result) => scoreFile(result, multiplier, config, baseline));
+  const issueGroups = results.map((result) => ({
+    filePath: result.filePath,
+    issues: result.issues,
+  }));
+
+  const aggregated = aggregateReport(scores, issueGroups, config);
+
+  const allIssues = results.flatMap((result) => result.issues);
+  allIssues.sort((a, b) => SEVERITY_WEIGHTS[b.severity] - SEVERITY_WEIGHTS[a.severity]);
+
+  const baselineMeta: BaselineMeta | undefined = baseline
+    ? {
+        active: true,
+        version: baseline.version,
+        baselineRevision: baseline.baseline_revision,
+        createdAt: baseline.baseline_created,
+      }
+    : undefined;
+
+  const report: ProjectReport = {
+    version: VERSION,
+    generatedAt: new Date().toISOString(),
+    configPath: resolveConfigPath(cwd),
+    slopIndex: aggregated.slopIndex,
+    assemblyHealth: aggregated.assemblyHealth,
+    categoryScores: aggregated.categoryScores,
+    p90Score: aggregated.p90Score,
+    peakScore: aggregated.peakScore,
+    componentCount: aggregated.componentCount,
+    components: aggregated.components,
+    issues: allIssues,
+    baseline: baselineMeta,
+  };
+
+  return { report, scores };
+}
+
 interface DoctorResult {
   ok: boolean;
   summary: string[];
@@ -460,44 +517,7 @@ async function runScan(
   });
   const results = await pool.scan(files);
 
-  for (const result of results) {
-    result.issues = filterIssues(result.issues, options);
-    for (const issue of result.issues) {
-      if (issue.filePath === undefined) {
-        issue.filePath = result.filePath;
-      }
-    }
-  }
-
-  const multiplier = resolveFrameworkMultiplier(config);
-  const scores = results.map((result) => scoreFile(result, multiplier, config, baseline));
-  const issueGroups = results.map((result) => ({
-    filePath: result.filePath,
-    issues: result.issues,
-  }));
-
-  const aggregated = aggregateReport(scores, issueGroups, config);
-
-  const allIssues = results.flatMap((result) => result.issues);
-  allIssues.sort((a, b) => SEVERITY_WEIGHTS[b.severity] - SEVERITY_WEIGHTS[a.severity]);
-
-  const configPath = resolveConfigPath(cwd);
-
-  const report: ProjectReport = {
-    version: VERSION,
-    generatedAt: new Date().toISOString(),
-    configPath,
-    slopIndex: aggregated.slopIndex,
-    assemblyHealth: aggregated.assemblyHealth,
-    categoryScores: aggregated.categoryScores,
-    p90Score: aggregated.p90Score,
-    peakScore: aggregated.peakScore,
-    componentCount: aggregated.componentCount,
-    components: aggregated.components,
-    issues: allIssues,
-    baseline: baselineMeta,
-  };
-
+  const { report, scores } = assembleProjectReport(results, config, options, baseline, cwd);
   return { report, scores, config, baseline, configElapsed };
 }
 
@@ -515,7 +535,49 @@ async function watchProject(
   const cacheFile = baselinePath(cwd);
   let lastBaselineMtime = existsSync(cacheFile) ? statSync(cacheFile).mtimeMs : 0;
 
-  const runOnce = async (): Promise<void> => {
+  const loadWatchConfig = async (): Promise<ResolvedConfig> => {
+    const loaded = await loadConfig(cwd);
+    return options.framework ? { ...loaded, framework: options.framework } : loaded;
+  };
+
+  let config = await loadWatchConfig();
+  let registry = new RuleRegistry();
+  registry.loadBuiltins();
+
+  const explicitSet =
+    explicitPaths.length > 0 ? new Set(explicitPaths.map((p) => resolve(cwd, p))) : undefined;
+
+  const getFileList = async (): Promise<string[]> => {
+    if (explicitSet) return Array.from(explicitSet);
+    return discoverFiles(cwd, config);
+  };
+
+  const loadActiveBaseline = async (): Promise<BaselineCache | undefined> => {
+    if (options.cache === false) return undefined;
+    const baselineCache = loadBaseline(cwd);
+    if (!baselineCache) return undefined;
+    const configHash = hashConfig(config);
+    const gitHead = (await getGitHead(cwd)) ?? 'unknown';
+    const validation = validateBaseline(baselineCache, configHash, gitHead);
+    if (validation.fatal) {
+      console.error(`Baseline error: ${validation.reason}`);
+      throw new Error(validation.reason);
+    }
+    if (!validation.valid && !validation.warning) {
+      return undefined;
+    }
+    return options.tighten ? tightenBaseline(baselineCache) : baselineCache;
+  };
+
+  const resultsMap = new Map<string, FileScanResult>();
+
+  const notifyBeforeRescan = (filePath: string): void => {
+    for (const { rule, context } of registry.createContexts(config, filePath)) {
+      rule.beforeRescan?.(context, filePath);
+    }
+  };
+
+  const render = async (scanStart: number): Promise<void> => {
     if (existsSync(cacheFile)) {
       const mtime = statSync(cacheFile).mtimeMs;
       if (mtime !== lastBaselineMtime) {
@@ -526,19 +588,43 @@ async function watchProject(
       }
     }
 
-    const scanStart = performance.now();
-    const scanResult = await runScan(options, explicitPaths);
-    const scanElapsed = Math.max(
-      0,
-      Math.round(performance.now() - scanStart) - scanResult.configElapsed,
-    );
-    renderOutput(scanResult.report, options);
+    const baseline = await loadActiveBaseline();
+    const results = Array.from(resultsMap.values());
+    const { report } = assembleProjectReport(results, config, options, baseline, cwd);
+    renderOutput(report, options);
     if (!options.quiet) {
+      const scanElapsed = Math.max(0, Math.round(performance.now() - scanStart));
       console.error(`(scan took ${scanElapsed}ms)`);
     }
   };
 
-  await runOnce();
+  const fullRescan = async (): Promise<void> => {
+    const scanStart = performance.now();
+    resultsMap.clear();
+    // Reset cross-file rule state by replacing the registry.
+    registry = new RuleRegistry();
+    registry.loadBuiltins();
+    const files = await getFileList();
+    for (const file of files) {
+      const result = await scanFile(file, config, registry);
+      resultsMap.set(file, result);
+    }
+    await render(scanStart);
+  };
+
+  const scanSingle = async (filePath: string): Promise<void> => {
+    const scanStart = performance.now();
+    notifyBeforeRescan(filePath);
+    if (!existsSync(filePath)) {
+      resultsMap.delete(filePath);
+    } else {
+      const result = await scanFile(filePath, config, registry);
+      resultsMap.set(filePath, result);
+    }
+    await render(scanStart);
+  };
+
+  await fullRescan();
 
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   const watcher = watch(cwd, { recursive: true }, (_eventType, filename) => {
@@ -549,11 +635,27 @@ async function watchProject(
       if (!options.quiet) {
         console.error('Config changed; reloading and rescanning...');
       }
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        void (async () => {
+          config = await loadWatchConfig();
+          await fullRescan();
+        })();
+      }, 100);
+      return;
     }
+
+    if (explicitSet && !explicitSet.has(changedPath)) return;
 
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
-      void runOnce();
+      void (async () => {
+        const matching = new Set(await getFileList());
+        if (!matching.has(changedPath) && !resultsMap.has(changedPath)) {
+          return;
+        }
+        await scanSingle(changedPath);
+      })();
     }, 100);
   });
 

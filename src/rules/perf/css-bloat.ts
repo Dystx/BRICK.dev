@@ -33,6 +33,19 @@ export const cssBloatRule = createRule<CssBloatContext>({
   create(context: RuleContext): CssBloatContext {
     return getAccumulator(context.registry);
   },
+  beforeRescan(context: CssBloatContext, filePath: string): void {
+    for (const [normalized, files] of context.seenFiles) {
+      if (files.has(filePath)) {
+        files.delete(filePath);
+        if (files.size <= 5) {
+          context.reported.delete(normalized);
+        }
+        if (files.size === 0) {
+          context.seenFiles.delete(normalized);
+        }
+      }
+    }
+  },
   analyze(context: CssBloatContext, facts: ScanFacts): Issue[] {
     const issues: Issue[] = [];
     for (const classFact of facts.staticClassNames) {
