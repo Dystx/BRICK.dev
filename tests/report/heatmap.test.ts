@@ -26,14 +26,14 @@ function makeReport(): ProjectReport {
       {
         filePath: 'src/pages/Home.tsx',
         rawScore: 12.0,
-        componentScore: 8.0,
+        componentScore: 30.0,
         adjustedScore: 30.0,
         componentCount: 1,
       },
       {
         filePath: 'src/components/Button.tsx',
         rawScore: 4.0,
-        componentScore: 3.0,
+        componentScore: 12.0,
         adjustedScore: 12.0,
         componentCount: 1,
       },

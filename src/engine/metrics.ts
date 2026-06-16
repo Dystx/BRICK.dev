@@ -1,3 +1,4 @@
+import { relative } from 'node:path';
 import type {
   BaselineCache,
   Category,
@@ -42,11 +43,17 @@ export function resolveFrameworkMultiplier(config: ResolvedConfig): number {
   return config.frameworkMultipliers[framework] ?? 1.0;
 }
 
+function baselineKey(filePath: string, cwd?: string): string {
+  if (!cwd) return filePath;
+  return relative(cwd, filePath);
+}
+
 export function scoreFile(
   result: FileScanResult,
   frameworkMultiplier: number,
   config: ResolvedConfig,
   baseline?: BaselineCache,
+  cwd?: string,
 ): ComponentScore {
   const rawScore = result.issues.reduce(
     (sum, issue) => sum + SEVERITY_WEIGHTS[issue.severity],
@@ -55,7 +62,8 @@ export function scoreFile(
   const hasHighSeverity = result.issues.some((issue) => issue.severity === 'high');
   const tax = contextTax(result.astNodeCount, hasHighSeverity, config.contextTaxCaps);
   const componentScore = Math.min(100, rawScore * frameworkMultiplier * tax);
-  const baselineScore = baseline?.scores[result.filePath]?.baselineScore ?? 0;
+  const key = baselineKey(result.filePath, cwd);
+  const baselineScore = baseline?.scores[key]?.baselineScore ?? 0;
   const adjustedScore = baseline ? Math.max(0, componentScore - baselineScore) : componentScore;
 
   return {
@@ -77,11 +85,14 @@ export function stagedVirtualMeanThresholdExceeded(
   stagedScores: ComponentScore[],
   baseline: BaselineCache,
   config: ResolvedConfig,
+  cwd: string,
 ): { exceeded: boolean; reason?: 'individual' | 'mean' | 'p90'; hypotheticalSlopIndex?: number } {
   if (stagedScores.length === 0) return { exceeded: false };
 
-  const stagedPaths = new Set(stagedScores.map((s) => s.filePath));
-  const baselineEntries = Object.entries(baseline.scores).filter(([path]) => !stagedPaths.has(path));
+  const stagedPaths = new Set(stagedScores.map((s) => relative(cwd, s.filePath)));
+  const baselineEntries = Object.entries(baseline.scores).filter(
+    ([path]) => !stagedPaths.has(path),
+  );
 
   const baselineAdjustedSum = baselineEntries.reduce(
     (sum, [, entry]) => sum + entry.baselineScore,

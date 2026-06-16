@@ -28,10 +28,10 @@ export function formatHeatmap(
 ): string {
   const rows: HeatmapRow[] = report.components
     .map((component) => {
-      const weights = computeRoi(component.adjustedScore, stats[component.filePath]);
+      const weights = computeRoi(component.componentScore, stats[component.filePath]);
       return {
         filePath: component.filePath,
-        adjustedScore: component.adjustedScore,
+        adjustedScore: component.componentScore,
         recencyWeight: weights.recencyWeight,
         churnWeight: weights.churnWeight,
         roi: weights.roi,

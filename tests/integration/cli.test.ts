@@ -681,7 +681,7 @@ describe('--doctor', () => {
       writeFileSync(join(dir, '.slop-audit', 'cache', 'baseline.json'), JSON.stringify(staleBaseline, null, 2));
 
       const { exitCode, stdout } = await run(['--doctor', '--workspace', dir]);
-      expect(exitCode).toBe(1);
+      expect(exitCode).toBe(2);
       expect(stdout).toContain('Baseline stale');
       expect(stdout).toContain('One or more diagnostic checks failed');
     });
@@ -812,13 +812,13 @@ describe('--tighten baseline persistence', () => {
 
     const baselinePath = join(dir, '.slop-audit', 'cache', 'baseline.json');
     const baselineBefore = JSON.parse(readFileSync(baselinePath, 'utf8')) as BaselineCache;
-    expect(baselineBefore.baseline_revision).toBe(1);
+    expect(baselineBefore.baseline_revision).toBe(0);
 
     const { exitCode: tightenExit } = await run(['--tighten', '--workspace', dir, '--format', 'json']);
     expect(tightenExit).toBe(0);
 
     const baselineAfter = JSON.parse(readFileSync(baselinePath, 'utf8')) as BaselineCache;
-    expect(baselineAfter.baseline_revision).toBe(2);
+    expect(baselineAfter.baseline_revision).toBe(1);
     const key = Object.keys(baselineAfter.scores)[0];
     expect(baselineAfter.scores[key].baselineScore).toBeLessThan(
       baselineBefore.scores[key].baselineScore + 0.001,

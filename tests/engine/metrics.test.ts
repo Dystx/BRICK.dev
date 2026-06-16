@@ -17,7 +17,7 @@ const baselineCache = (
   config_hash: 'hash',
   git_head: 'head',
   baseline_created: new Date().toISOString(),
-  baseline_revision: 1,
+  baseline_revision: 0,
   totalComponentCount: Object.keys(scores).length,
   scores: Object.fromEntries(
     Object.entries(scores).map(([path, entry]) => [

@@ -37,7 +37,7 @@ function makeBaseline(overrides: Partial<BaselineCache> = {}): BaselineCache {
     config_hash: 'hash',
     git_head: 'head',
     baseline_created: new Date().toISOString(),
-    baseline_revision: 1,
+    baseline_revision: 0,
     totalComponentCount: 1,
     scores: { 'src/Existing.tsx': { baselineScore: 0, componentCount: 1 } },
     ...overrides,
@@ -53,7 +53,7 @@ describe('stagedVirtualMeanThresholdExceeded', () => {
     const stagedScores = [makeScore({ componentCount: 5, adjustedScore: 10 })];
     const config = makeConfig(3);
 
-    const result = stagedVirtualMeanThresholdExceeded(stagedScores, baseline, config);
+    const result = stagedVirtualMeanThresholdExceeded(stagedScores, baseline, config, process.cwd());
 
     expect(result.exceeded).toBe(true);
     expect(result.reason).toBe('mean');
@@ -68,7 +68,7 @@ describe('stagedVirtualMeanThresholdExceeded', () => {
     const stagedScores = [makeScore({ componentCount: 100, adjustedScore: 100 })];
     const config = makeConfig(10);
 
-    const result = stagedVirtualMeanThresholdExceeded(stagedScores, baseline, config);
+    const result = stagedVirtualMeanThresholdExceeded(stagedScores, baseline, config, process.cwd());
 
     // Raw mean = 100 / 2 = 50. Normalization for 110 components is < 1,
     // so the gate should compare a lower normalized value.
@@ -88,7 +88,7 @@ describe('stagedVirtualMeanThresholdExceeded', () => {
     const stagedScores = [makeScore({ filePath: 'src/Modified.tsx', adjustedScore: 2, componentCount: 1 })];
     const config = makeConfig(5);
 
-    const result = stagedVirtualMeanThresholdExceeded(stagedScores, baseline, config);
+    const result = stagedVirtualMeanThresholdExceeded(stagedScores, baseline, config, process.cwd());
 
     // Without deduplication, sum = 4 + 8 + 2 = 14 over 3 files => mean 7.
     // With deduplication, sum = 4 + 2 = 6 over 2 files => mean 3.
@@ -102,7 +102,7 @@ describe('stagedVirtualMeanThresholdExceeded', () => {
     // Keep meanSlop and individualSlopThreshold high so only the p90 check fires.
     const config = makeConfig(100, 100, 50);
 
-    const result = stagedVirtualMeanThresholdExceeded(stagedScores, baseline, config);
+    const result = stagedVirtualMeanThresholdExceeded(stagedScores, baseline, config, process.cwd());
 
     expect(result.exceeded).toBe(true);
     expect(result.reason).toBe('p90');
@@ -114,7 +114,7 @@ describe('stagedVirtualMeanThresholdExceeded', () => {
     // Keep meanSlop and p90Slop high so the individual check fires.
     const config = makeConfig(100, 50, 100);
 
-    const result = stagedVirtualMeanThresholdExceeded(stagedScores, baseline, config);
+    const result = stagedVirtualMeanThresholdExceeded(stagedScores, baseline, config, process.cwd());
 
     expect(result.exceeded).toBe(true);
     expect(result.reason).toBe('individual');
@@ -125,7 +125,7 @@ describe('stagedVirtualMeanThresholdExceeded', () => {
     const stagedScores = [makeScore({ adjustedScore: 5 })];
     const config = makeConfig(25, 50);
 
-    const result = stagedVirtualMeanThresholdExceeded(stagedScores, baseline, config);
+    const result = stagedVirtualMeanThresholdExceeded(stagedScores, baseline, config, process.cwd());
 
     expect(result.exceeded).toBe(false);
   });
@@ -134,7 +134,7 @@ describe('stagedVirtualMeanThresholdExceeded', () => {
     const baseline = makeBaseline();
     const config = makeConfig(25);
 
-    const result = stagedVirtualMeanThresholdExceeded([], baseline, config);
+    const result = stagedVirtualMeanThresholdExceeded([], baseline, config, process.cwd());
 
     expect(result.exceeded).toBe(false);
   });

@@ -10,7 +10,7 @@ import {
   watch,
   writeFileSync,
 } from 'node:fs';
-import { resolve, join, dirname } from 'node:path';
+import { resolve, join, dirname, relative } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import os, { tmpdir } from 'node:os';
 
@@ -70,6 +70,10 @@ import {
 
 export * from './types.js';
 export { loadConfig, DEFAULT_CONFIG } from './config.js';
+
+function escalateExitCode(current: 0 | 1 | 2, code: 1 | 2): 0 | 1 | 2 {
+  return current > code ? current : code;
+}
 
 export interface ScanProjectOptions {
   cwd: string;
@@ -238,11 +242,13 @@ function buildBaselineCache(
   report: ProjectReport,
   configHash: string,
   gitHead: string,
+  cwd: string,
 ): BaselineCache {
   const scores: BaselineCache['scores'] = {};
   for (const component of report.components) {
-    scores[component.filePath] = {
-      baselineScore: component.adjustedScore,
+    const key = relative(cwd, component.filePath);
+    scores[key] = {
+      baselineScore: component.componentScore,
       componentCount: component.componentCount,
     };
   }
@@ -251,7 +257,7 @@ function buildBaselineCache(
     config_hash: configHash,
     git_head: gitHead,
     baseline_created: new Date().toISOString(),
-    baseline_revision: 1,
+    baseline_revision: 0,
     totalComponentCount: report.componentCount,
     scores,
   };
@@ -271,6 +277,7 @@ function assembleProjectReport(
   options: Pick<ScanRunOptions, 'aiOnly' | 'humanOnly' | 'ignoreWcag22'>,
   baseline: BaselineCache | undefined,
   cwd: string,
+  mergeBaseline = false,
 ): { report: ProjectReport; scores: ComponentScore[] } {
   for (const result of results) {
     result.issues = filterIssues(result.issues, options);
@@ -282,11 +289,28 @@ function assembleProjectReport(
   }
 
   const multiplier = resolveFrameworkMultiplier(config);
-  const scores = results.map((result) => scoreFile(result, multiplier, config, baseline));
+  const scores = results.map((result) => scoreFile(result, multiplier, config, baseline, cwd));
   const issueGroups = results.map((result) => ({
     filePath: result.filePath,
     issues: result.issues,
   }));
+  const scannedPaths = new Set(results.map((result) => relative(cwd, result.filePath)));
+
+  // Merge in unchanged baseline entries so partial scans still reflect the full project.
+  if (baseline && mergeBaseline) {
+    for (const [key, entry] of Object.entries(baseline.scores)) {
+      if (scannedPaths.has(key)) continue;
+      const absolutePath = resolve(cwd, key);
+      scores.push({
+        filePath: absolutePath,
+        rawScore: entry.baselineScore,
+        componentScore: entry.baselineScore,
+        adjustedScore: 0,
+        componentCount: entry.componentCount,
+      });
+      issueGroups.push({ filePath: absolutePath, issues: [] });
+    }
+  }
 
   const aggregated = aggregateReport(scores, issueGroups, config);
 
@@ -323,6 +347,7 @@ function assembleProjectReport(
 interface DoctorResult {
   ok: boolean;
   summary: string[];
+  exitCode: 0 | 1 | 2;
 }
 
 async function runDoctor(
@@ -330,7 +355,7 @@ async function runDoctor(
   options?: { cache?: boolean },
 ): Promise<DoctorResult> {
   const lines: string[] = ['slop-audit diagnostics', ''];
-  let ok = true;
+  let exitCode: 0 | 1 | 2 = 0;
   const useCache = options?.cache !== false;
 
   const mark = (pass: boolean): string => (pass ? '✓' : '✗');
@@ -352,7 +377,7 @@ async function runDoctor(
     parseSync('const x = 1;', { syntax: 'typescript' });
     parserOk = true;
   } catch (err) {
-    ok = false;
+    exitCode = escalateExitCode(exitCode, 1);
     parserError = err instanceof Error ? err.message : String(err);
   }
   push(
@@ -368,7 +393,7 @@ async function runDoctor(
       parseSync('const El = () => <div className="x" />;', { syntax: 'typescript', tsx: true });
       jsxOk = true;
     } catch (err) {
-      ok = false;
+      exitCode = escalateExitCode(exitCode, 1);
       jsxError = err instanceof Error ? err.message : String(err);
     }
   }
@@ -385,13 +410,13 @@ async function runDoctor(
   if (gitRoot) {
     push(mark(true), 'Git available', `root: ${gitRoot}`);
   } else {
-    ok = false;
+    exitCode = escalateExitCode(exitCode, 1);
     push(mark(false), 'Git not available', 'not a git repository or git not in PATH');
   }
   if (gitHead) {
     push(mark(true), 'HEAD readable', gitHead);
   } else if (gitRoot) {
-    ok = false;
+    exitCode = escalateExitCode(exitCode, 1);
     push(mark(false), 'HEAD not readable');
   }
   lines.push('');
@@ -422,7 +447,7 @@ async function runDoctor(
     }
     rmSync(dir, { recursive: true, force: true });
   } catch (err) {
-    ok = false;
+    exitCode = escalateExitCode(exitCode, 1);
     workersError = err instanceof Error ? err.message : String(err);
   }
   push(
@@ -440,7 +465,7 @@ async function runDoctor(
     if (!baseline) {
       push(mark(true), 'No baseline cache found');
     } else if (!gitHead) {
-      ok = false;
+      exitCode = escalateExitCode(exitCode, 1);
       push(mark(false), 'Baseline present but cannot validate freshness', 'git HEAD unavailable');
     } else {
       const config = await loadConfig(cwd);
@@ -451,7 +476,7 @@ async function runDoctor(
         push(mark(true), 'config_hash matches');
         push(mark(true), `git_head matches (${baseline.git_head.slice(0, 7)})`);
       } else {
-        ok = false;
+        exitCode = escalateExitCode(exitCode, 2);
         push(mark(false), `Baseline stale: ${validation.reason}`);
         push(mark(false), `stored config_hash: ${baseline.config_hash.slice(0, 7)}…, current: ${configHash.slice(0, 7)}…`);
         push(mark(false), `stored git_head: ${baseline.git_head.slice(0, 7)}…, current: ${gitHead.slice(0, 7)}…`);
@@ -479,10 +504,11 @@ async function runDoctor(
   }
   lines.push('');
 
+  const ok = exitCode === 0;
   const summary = ok ? 'All diagnostic checks passed.' : 'One or more diagnostic checks failed.';
   push(mark(ok), summary);
 
-  return { ok, summary: lines };
+  return { ok, summary: lines, exitCode };
 }
 
 async function runScan(
@@ -581,7 +607,11 @@ async function runScan(
   });
   const results = await pool.scan(files);
 
-  const { report, scores } = assembleProjectReport(results, config, options, baseline, cwd);
+  // Partial scans (--since or explicit paths) should still reflect the full
+  // project in their aggregated report. --staged gating computes the virtual
+  // project mean separately, so it keeps a staged-only report for output.
+  const mergeBaseline = !!(options.since || (explicitPaths && explicitPaths.length > 0));
+  const { report, scores } = assembleProjectReport(results, config, options, baseline, cwd, mergeBaseline);
   return { report, scores, config, baseline, configElapsed };
 }
 
@@ -862,7 +892,7 @@ export async function runCli({ start }: { start: number }): Promise<void> {
           });
           const configHash = hashConfig(config);
           const gitHead = (await getGitHead(cwd)) ?? 'unknown';
-          const cache = buildBaselineCache(report, configHash, gitHead);
+          const cache = buildBaselineCache(report, configHash, gitHead, cwd);
           saveBaseline(cwd, cache);
           if (!options.quiet) {
             console.log(`Saved baseline to ${baselinePath(cwd)}`);
@@ -961,11 +991,11 @@ export async function runCli({ start }: { start: number }): Promise<void> {
       }
 
       if (options.doctor) {
-        const { ok, summary } = await runDoctor(cwd, { cache: options.cache });
+        const { summary, exitCode } = await runDoctor(cwd, { cache: options.cache });
         console.log(summary.join('\n'));
         const isScanInvocation = paths.length > 0 || options.staged || options.since;
         if (!isScanInvocation) {
-          process.exit(ok ? 0 : 1);
+          process.exit(exitCode);
         }
       }
 
@@ -1021,7 +1051,7 @@ export async function runCli({ start }: { start: number }): Promise<void> {
 
       if (options.staged) {
         if (baseline) {
-          const check = stagedVirtualMeanThresholdExceeded(scores, baseline, config);
+          const check = stagedVirtualMeanThresholdExceeded(scores, baseline, config, cwd);
           exitCode = check.exceeded ? 1 : 0;
           stagedReason = check.reason;
         } else {
@@ -1070,7 +1100,7 @@ export async function runCli({ start }: { start: number }): Promise<void> {
 
     await program.parseAsync(process.argv);
   } catch (err) {
-    console.error('Unexpected error:', err instanceof Error ? err.message : String(err));
+    console.error('Unexpected error:', err instanceof Error ? err.stack ?? err.message : String(err));
     process.exit(3);
   }
 }

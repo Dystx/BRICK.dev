@@ -114,4 +114,40 @@ describe('wcag/target-size', () => {
     const issues = await runRule(source, makeConfig());
     expect(issues).toHaveLength(1);
   });
+
+  it('does not flag a token that meets the 24px minimum footprint', async () => {
+    const source = `export function Form() { return <button className="w-6" />; }`;
+    const issues = await runRule(source, makeConfig());
+    expect(issues).toHaveLength(0);
+  });
+
+  it('does not flag size-* token that meets the 24px minimum footprint', async () => {
+    const source = `export function Form() { return <button className="size-6" />; }`;
+    const issues = await runRule(source, makeConfig());
+    expect(issues).toHaveLength(0);
+  });
+
+  it('flags an arbitrary width below the 24px minimum footprint', async () => {
+    const source = `export function Form() { return <button className="w-[20px]" />; }`;
+    const issues = await runRule(source, makeConfig());
+    expect(issues).toHaveLength(1);
+  });
+
+  it('flags a token below the 24px minimum footprint', async () => {
+    const source = `export function Form() { return <button className="w-4" />; }`;
+    const issues = await runRule(source, makeConfig());
+    expect(issues).toHaveLength(1);
+  });
+
+  it('flags size-* token below the 24px minimum footprint', async () => {
+    const source = `export function Form() { return <button className="size-4" />; }`;
+    const issues = await runRule(source, makeConfig());
+    expect(issues).toHaveLength(1);
+  });
+
+  it('counts horizontal padding toward the width footprint', async () => {
+    const source = `export function Form() { return <button className="w-4 px-2" />; }`;
+    const issues = await runRule(source, makeConfig());
+    expect(issues).toHaveLength(0);
+  });
 });
