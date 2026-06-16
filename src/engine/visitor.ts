@@ -320,7 +320,13 @@ function extractStateBinding(
   };
 }
 
-export function extractFacts(filePath: string, ast: Module, nodeCount: number, offset = 0): ScanFacts {
+export function extractFacts(
+  filePath: string,
+  ast: Module,
+  nodeCount: number,
+  offset = 0,
+  extraClassNames?: ClassNameFact[],
+): ScanFacts {
   const source = readFileSync(filePath, 'utf-8');
   const lineOffsets = buildLineOffsets(source);
 
@@ -332,7 +338,7 @@ export function extractFacts(filePath: string, ast: Module, nodeCount: number, o
     filePath,
     astNodeCount: nodeCount,
     components: [],
-    staticClassNames: [],
+    staticClassNames: extraClassNames ? [...extraClassNames] : [],
     styleProps: [],
     jsxElements: [],
     interactiveElements: [],

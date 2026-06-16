@@ -97,4 +97,38 @@ describe('parseFile', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('extracts static class attributes from Vue templates', async () => {
+    const dir = createTmpDir();
+    try {
+      const file = join(dir, 'Card.vue');
+      writeFileSync(
+        file,
+        `<template>\n  <div class=\"flex items-center\">\n    <span :class=\"dynamicClass\">text</span>\n  </div>\n</template>\n<script setup>\nconst dynamicClass = 'bold';\n</script>\n`,
+      );
+      const result = await parseFile(file);
+      expect(result.extraClassNames).toHaveLength(1);
+      expect(result.extraClassNames?.[0].value).toBe('flex items-center');
+      expect(result.extraClassNames?.[0].line).toBe(2);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('extracts static class attributes from Svelte markup', async () => {
+    const dir = createTmpDir();
+    try {
+      const file = join(dir, 'Card.svelte');
+      writeFileSync(
+        file,
+        `<script>\n  let active = false;\n</script>\n<div class=\"flex items-center\">\n  <span class:active={active}>text</span>\n</div>\n`,
+      );
+      const result = await parseFile(file);
+      expect(result.extraClassNames).toHaveLength(1);
+      expect(result.extraClassNames?.[0].value).toBe('flex items-center');
+      expect(result.extraClassNames?.[0].line).toBe(4);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

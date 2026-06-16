@@ -1,6 +1,7 @@
 import { parseFile as swcParseFile, parseSync } from '@swc/core';
 import type { Module } from '@swc/core';
 import { readFileSync } from 'node:fs';
+import type { ClassNameFact } from '../types.js';
 
 export interface ParseResult {
   ast: Module;
@@ -11,6 +12,11 @@ export interface ParseResult {
    * fragment.
    */
   offset?: number;
+  /**
+   * Static class names extracted from non-JSX markup (e.g. Vue/Svelte
+   * templates) that SWC cannot parse directly.
+   */
+  extraClassNames?: ClassNameFact[];
 }
 
 function syntaxFor(filePath: string): { syntax: 'typescript' | 'ecmascript'; jsx: boolean; tsx?: boolean } {
@@ -41,6 +47,70 @@ function prepareAstroSource(source: string): { transformed: string; offset: numb
 }
 
 const SCRIPT_BLOCK_RE = /<script\b([^>]*)>([\s\S]*?)<\/script>/i;
+const STYLE_BLOCK_RE = /<style\b([^>]*)>[\s\S]*?<\/style>/gi;
+const VUE_TEMPLATE_RE = /<template\b[^>]*>([\s\S]*?)<\/template>/i;
+const STATIC_CLASS_RE = /\sclass=["']([^"']+)["']/g;
+
+function indexToLineColumn(source: string, index: number): { line: number; column: number } {
+  let line = 1;
+  let column = 1;
+  for (let i = 0; i < index && i < source.length; i++) {
+    if (source[i] === '\n') {
+      line++;
+      column = 1;
+    } else {
+      column++;
+    }
+  }
+  return { line, column };
+}
+
+function findSkipRanges(source: string, re: RegExp): Array<{ start: number; end: number }> {
+  const ranges: Array<{ start: number; end: number }> = [];
+  const global = new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g');
+  for (const match of source.matchAll(global)) {
+    ranges.push({ start: match.index, end: match.index + match[0].length });
+  }
+  return ranges;
+}
+
+function extractStaticClassNames(source: string, ext: 'vue' | 'svelte'): ClassNameFact[] {
+  const facts: ClassNameFact[] = [];
+
+  if (ext === 'vue') {
+    const templateMatch = VUE_TEMPLATE_RE.exec(source);
+    if (!templateMatch) return [];
+    const openingTagEnd = templateMatch[0].indexOf('>') + 1;
+    const contentStart = (templateMatch.index ?? 0) + openingTagEnd;
+    const contentEnd = contentStart + templateMatch[1].length;
+    const content = source.slice(contentStart, contentEnd);
+
+    STATIC_CLASS_RE.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = STATIC_CLASS_RE.exec(content)) !== null) {
+      const value = match[1];
+      const valueStart = contentStart + match.index + match[0].indexOf(value);
+      const { line, column } = indexToLineColumn(source, valueStart);
+      facts.push({ value, line, column });
+    }
+    return facts;
+  }
+
+  // Svelte: search the whole file but skip script/style blocks.
+  const skipRanges = [...findSkipRanges(source, SCRIPT_BLOCK_RE), ...findSkipRanges(source, STYLE_BLOCK_RE)];
+  STATIC_CLASS_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = STATIC_CLASS_RE.exec(source)) !== null) {
+    if (skipRanges.some((range) => match!.index >= range.start && match!.index < range.end)) {
+      continue;
+    }
+    const value = match[1];
+    const valueStart = match.index + match[0].indexOf(value);
+    const { line, column } = indexToLineColumn(source, valueStart);
+    facts.push({ value, line, column });
+  }
+  return facts;
+}
 
 function prepareScriptSource(
   source: string,
@@ -80,6 +150,7 @@ export async function parseFile(filePath: string): Promise<ParseResult> {
   if (ext === 'vue' || ext === 'svelte') {
     const source = readFileSync(filePath, 'utf-8');
     const { transformed, syntax } = prepareScriptSource(source);
+    const extraClassNames = extractStaticClassNames(source, ext);
     const ast =
       syntax === 'typescript'
         ? parseSync(transformed, {
@@ -90,7 +161,7 @@ export async function parseFile(filePath: string): Promise<ParseResult> {
             syntax: 'ecmascript',
             target: 'es2022',
           });
-    return { ast, nodeCount: countNodes(ast), offset: 0 };
+    return { ast, nodeCount: countNodes(ast), offset: 0, extraClassNames };
   }
 
   const { syntax, jsx, tsx } = syntaxFor(filePath);
